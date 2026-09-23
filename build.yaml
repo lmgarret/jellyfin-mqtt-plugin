@@ -1,16 +1,19 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
-version: "1.0.0.0"
-targetAbi: "10.11.0.0"
-framework: "net9.0"
-overview: "Short description about your plugin"
+name: "MQTT"
+guid: "1b020142-51af-4034-b9e6-650165ae0be0"
+version: "0.1.0.0"
+targetAbi: "12.0.0.0"
+framework: "net10.0"
+overview: "Publish Jellyfin clients as MQTT media players"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
+  Publishes the devices of selected Jellyfin users as media players over MQTT,
+  with their playback state and play/pause/stop/next/previous/volume controls.
+  Players are announced to Home Assistant for the mqtt_universal_media_player
+  custom integration.
 category: "General"
-owner: "jellyfin"
+owner: "lmgarret"
 artifacts:
-- "Jellyfin.Plugin.Template.dll"
+- "Jellyfin.Plugin.Mqtt.dll"
+- "MQTTnet.dll"
 changelog: >
-  changelog
+  Initial release.

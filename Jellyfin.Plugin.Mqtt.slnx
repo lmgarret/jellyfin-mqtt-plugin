@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Jellyfin.Plugin.Mqtt/Jellyfin.Plugin.Mqtt.csproj" />
+  <Project Path="Jellyfin.Plugin.Mqtt.Tests/Jellyfin.Plugin.Mqtt.Tests.csproj" />
+</Solution>
