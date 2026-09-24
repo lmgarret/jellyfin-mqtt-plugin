@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Mqtt.Players;
 using MediaBrowser.Controller.Session;
@@ -73,18 +72,6 @@ public class PlayerStateBuilderTests
         Assert.Equal(new ImageReference(seriesId, "tag"), state.MediaImage);
         Assert.Equal(TimeSpan.FromSeconds(90), state.MediaPosition);
         Assert.Null(PlayerStateBuilder.Build(_device, session, string.Empty).MediaImageUrl);
-    }
-
-    [Fact]
-    public void Payload_ContainsEveryKey()
-    {
-        using var payload = JsonDocument.Parse(new PlayerState().ToPayload());
-        var root = payload.RootElement;
-
-        Assert.Equal("off", root.GetProperty("state").GetString());
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("media_title").ValueKind);
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("media_position").ValueKind);
-        Assert.False(JsonDocument.Parse(new PlayerState().ToPayload(false)).RootElement.TryGetProperty("media_position", out _));
     }
 
     private static SessionInfo CreateSession() =>

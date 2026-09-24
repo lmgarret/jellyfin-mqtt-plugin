@@ -9,20 +9,20 @@ using Xunit;
 
 namespace Jellyfin.Plugin.Mqtt.Tests;
 
-public class PlayerCommandsTests
+public class PlayerCommandExecutorTests
 {
     private readonly ISessionManager _sessionManager = Substitute.For<ISessionManager>();
 
     [Theory]
-    [InlineData("play", PlaystateCommand.Unpause)]
-    [InlineData("pause", PlaystateCommand.Pause)]
-    [InlineData("play_pause", PlaystateCommand.PlayPause)]
-    [InlineData("stop", PlaystateCommand.Stop)]
-    [InlineData("next", PlaystateCommand.NextTrack)]
-    [InlineData("previous", PlaystateCommand.PreviousTrack)]
-    public async Task PlaystateCommands_AreForwardedAsServer(string key, PlaystateCommand expected)
+    [InlineData(PlayerCommandKind.Play, PlaystateCommand.Unpause)]
+    [InlineData(PlayerCommandKind.Pause, PlaystateCommand.Pause)]
+    [InlineData(PlayerCommandKind.PlayPause, PlaystateCommand.PlayPause)]
+    [InlineData(PlayerCommandKind.Stop, PlaystateCommand.Stop)]
+    [InlineData(PlayerCommandKind.Next, PlaystateCommand.NextTrack)]
+    [InlineData(PlayerCommandKind.Previous, PlaystateCommand.PreviousTrack)]
+    public async Task PlaystateCommands_AreForwardedAsServer(PlayerCommandKind kind, PlaystateCommand expected)
     {
-        await PlayerCommands.ExecuteAsync(_sessionManager, "session", $"{{\"{key}\": true}}", CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(kind), CancellationToken.None);
 
         await _sessionManager.Received(1).SendPlaystateCommand(null, "session", Arg.Is<PlaystateRequest>(r => r.Command == expected), Arg.Any<CancellationToken>());
     }
@@ -30,7 +30,7 @@ public class PlayerCommandsTests
     [Fact]
     public async Task Seek_ConvertsSecondsToTicks()
     {
-        await PlayerCommands.ExecuteAsync(_sessionManager, "session", "{\"seek\": 12.5}", CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.Seek, 12.5), CancellationToken.None);
 
         await _sessionManager.Received(1).SendPlaystateCommand(
             null,
@@ -42,7 +42,8 @@ public class PlayerCommandsTests
     [Fact]
     public async Task VolumeAndMute_AreGeneralCommands()
     {
-        await PlayerCommands.ExecuteAsync(_sessionManager, "session", "{\"volume\": 140, \"mute\": false}", CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.SetVolume, 140), CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.SetMute, 0), CancellationToken.None);
 
         await _sessionManager.Received(1).SendGeneralCommand(
             null,
@@ -54,16 +55,5 @@ public class PlayerCommandsTests
             "session",
             Arg.Is<GeneralCommand>(c => c.Name == GeneralCommandType.Unmute),
             Arg.Any<CancellationToken>());
-    }
-
-    [Theory]
-    [InlineData("not json")]
-    [InlineData("[1]")]
-    [InlineData("{\"dance\": true}")]
-    [InlineData("{\"volume\": \"loud\"}")]
-    [InlineData("{\"mute\": 1}")]
-    public async Task InvalidCommands_Throw(string payload)
-    {
-        await Assert.ThrowsAsync<FormatException>(() => PlayerCommands.ExecuteAsync(_sessionManager, "session", payload, CancellationToken.None));
     }
 }

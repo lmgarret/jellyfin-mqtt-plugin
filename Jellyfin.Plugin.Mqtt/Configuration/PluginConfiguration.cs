@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using Jellyfin.Plugin.Mqtt.Integrations.UniversalMediaPlayer;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.Mqtt.Configuration;
@@ -50,7 +51,13 @@ public class PluginConfiguration : BasePluginConfiguration
     public string BaseTopic { get; set; } = "jellyfin";
 
     /// <summary>
-    /// Gets or sets the Home Assistant discovery prefix.
+    /// Gets or sets the ids of the enabled integrations, which decide the MQTT formats players are published in.
+    /// </summary>
+    [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Required by the XML serializer.")]
+    public string[] EnabledIntegrations { get; set; } = [UniversalMediaPlayerIntegration.IntegrationId];
+
+    /// <summary>
+    /// Gets or sets the Home Assistant discovery prefix, used by the mqtt_universal_media_player integration.
     /// </summary>
     public string DiscoveryPrefix { get; set; } = "homeassistant";
 

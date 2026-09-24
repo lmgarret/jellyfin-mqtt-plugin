@@ -13,22 +13,32 @@ Requires Jellyfin 12.
 In the plugin settings:
 
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
-- **Topics**: base topic (default `jellyfin`), Home Assistant discovery prefix (default `homeassistant`), and optionally a Jellyfin URL to also publish artwork as a link (`media_image_url`).
+- **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
+- **Integrations**: the MQTT formats players are published in, see below. Only `mqtt_universal_media_player` exists for now, enabled by default.
 - **Exposed players**: no user is exposed by default. Select users to publish their devices, and uncheck devices to hide them.
 
-## Home Assistant
+## Architecture
 
-Home Assistant's MQTT integration has no `media_player` discovery. Install the [MQTT Universal Media Player](https://github.com/grzegorz914/homeassistant-mqtt-media-player) custom integration (HACS custom repository, v0.3.0 or later for artwork); players then show up automatically.
+The core tracks the exposed devices and their sessions, and builds a format-neutral player state (status, metadata, artwork, volume). It hands every change to the enabled **integrations**, and executes the neutral commands (play, pause, seek, volume, …) they receive.
 
-## Topics
+Each integration owns its topics and payloads, so supporting another consumer means adding an `IPlayerIntegration` (see `Jellyfin.Plugin.Mqtt/Integrations/`) without touching the core. Several integrations can be enabled at once, as long as their topics do not overlap.
+
+Shared by every integration:
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
 | `<base>/status` | out, retained | `online` / `offline` (last will) |
+
+## Integration: `mqtt_universal_media_player`
+
+Home Assistant's MQTT integration has no `media_player` discovery. Install the [MQTT Universal Media Player](https://github.com/grzegorz914/homeassistant-mqtt-media-player) custom integration (HACS custom repository, v0.3.0 or later); players then show up automatically. Its discovery prefix is configurable (default `homeassistant`).
+
+| Topic | Direction | Payload |
+| --- | --- | --- |
 | `<base>/players/<id>/state` | out, retained | JSON state, see below |
 | `<base>/players/<id>/image` | out, retained | Artwork bytes (JPEG/PNG, max 600px), empty when nothing plays |
 | `<base>/players/<id>/command` | in | JSON command, see below |
-| `<prefix>/media_player/jellyfin_<server>_<id>/config` | out, retained | Home Assistant discovery |
+| `<prefix>/media_player/jellyfin_<server>_<id>/config` | out, retained | Discovery |
 
 `<id>` is a hash of the Jellyfin device id.
 

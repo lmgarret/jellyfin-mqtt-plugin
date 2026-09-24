@@ -51,17 +51,28 @@
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="BaseTopic">Base topic</label>
                             <input id="BaseTopic" type="text" is="emby-input" />
-                            <div class="fieldDescription">Players publish on &lt;base&gt;/players/&lt;id&gt;/state and listen on &lt;base&gt;/players/&lt;id&gt;/command. Use a different base topic per Jellyfin server.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="DiscoveryPrefix">Home Assistant discovery prefix</label>
-                            <input id="DiscoveryPrefix" type="text" is="emby-input" />
-                            <div class="fieldDescription">Players are announced for the mqtt_universal_media_player custom integration.</div>
+                            <div class="fieldDescription">Prefix of every topic published by the plugin. Use a different base topic per Jellyfin server.</div>
                         </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="ServerUrl">Server URL for artwork links (optional)</label>
                             <input id="ServerUrl" type="url" is="emby-input" placeholder="http://jellyfin.local:8096" />
-                            <div class="fieldDescription">Artwork is always published as image bytes on &lt;base&gt;/players/&lt;id&gt;/image. When set, the state also carries a media_image_url link built from this URL.</div>
+                            <div class="fieldDescription">Artwork is always published as image bytes. When set, player states also carry an artwork link built from this URL.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Integrations</h2>
+                        <div class="fieldDescription">Each integration publishes the players in the MQTT format of one consumer.</div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input type="checkbox" is="emby-checkbox" class="mqttIntegration" data-id="mqtt_universal_media_player" />
+                                <span>Home Assistant: MQTT Universal Media Player</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Requires the mqtt_universal_media_player custom integration, 0.3.0 or later.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="DiscoveryPrefix">Home Assistant discovery prefix</label>
+                            <input id="DiscoveryPrefix" type="text" is="emby-input" />
                         </div>
                     </div>
 
@@ -157,6 +168,8 @@
                         textFields.forEach(function (f) { page.querySelector('#' + f).value = config[f] || ''; });
                         checkFields.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
                         page.querySelector('#BrokerPort').value = config.BrokerPort;
+                        var enabled = config.EnabledIntegrations || [];
+                        page.querySelectorAll('.mqttIntegration').forEach(function (c) { c.checked = enabled.indexOf(c.getAttribute('data-id')) !== -1; });
                         renderUsers(config.AllowedUserIds || []);
                     }).finally(function () {
                         Dashboard.hideLoadingMsg();
@@ -170,6 +183,8 @@
                         textFields.forEach(function (f) { var v = page.querySelector('#' + f).value; config[f] = f === 'Password' ? v : v.trim(); });
                         checkFields.forEach(function (f) { config[f] = page.querySelector('#' + f).checked; });
                         config.BrokerPort = parseInt(page.querySelector('#BrokerPort').value, 10) || 1883;
+                        config.EnabledIntegrations = Array.prototype.filter.call(page.querySelectorAll('.mqttIntegration'), function (c) { return c.checked; })
+                            .map(function (c) { return c.getAttribute('data-id'); });
                         config.AllowedUserIds = selectedUsers();
                         config.ExcludedDeviceIds = excluded = collectExcluded();
                         return ApiClient.updatePluginConfiguration(pluginId, config);

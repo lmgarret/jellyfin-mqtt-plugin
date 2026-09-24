@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Queries;
 using Jellyfin.Plugin.Mqtt.Configuration;
+using Jellyfin.Plugin.Mqtt.Integrations;
 using Jellyfin.Plugin.Mqtt.Mqtt;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Devices;
@@ -17,7 +18,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.Mqtt.Players;
 
 /// <summary>
-/// Publishes the exposed Jellyfin devices as MQTT media players and forwards their commands.
+/// Tracks the exposed Jellyfin devices and their sessions, hands their state to the enabled
+/// integrations, and executes the commands the integrations receive.
 /// </summary>
 public sealed class PlayerBridgeService : IHostedService, IDisposable
 {
@@ -26,7 +28,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     private static readonly TimeSpan _cleanupWindow = TimeSpan.FromSeconds(10);
 
     private readonly MqttConnection _connection;
-    private readonly IDiscoveryPublisher _discovery;
+    private readonly IReadOnlyList<IPlayerIntegration> _integrations;
     private readonly ArtworkLoader _artwork;
     private readonly ISessionManager _sessionManager;
     private readonly IDeviceManager _deviceManager;
@@ -38,8 +40,8 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     // Guarded by _lock.
     private readonly Dictionary<string, ExposedDevice> _devices = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PublishedState> _published = new(StringComparer.Ordinal);
-    private PluginConfiguration _config = new();
-    private DiscoverySettings? _settings;
+    private IntegrationContext? _context;
+    private IReadOnlyList<IPlayerIntegration> _enabled = [];
     private HashSet<Guid> _allowedUsers = [];
     private HashSet<string> _excludedDevices = [];
 
@@ -49,7 +51,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     /// Initializes a new instance of the <see cref="PlayerBridgeService"/> class.
     /// </summary>
     /// <param name="connection">The MQTT connection.</param>
-    /// <param name="discovery">The discovery publisher.</param>
+    /// <param name="integrations">The available integrations.</param>
     /// <param name="artwork">The artwork loader.</param>
     /// <param name="sessionManager">The session manager.</param>
     /// <param name="deviceManager">The device manager.</param>
@@ -57,7 +59,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     /// <param name="logger">The logger.</param>
     public PlayerBridgeService(
         MqttConnection connection,
-        IDiscoveryPublisher discovery,
+        IEnumerable<IPlayerIntegration> integrations,
         ArtworkLoader artwork,
         ISessionManager sessionManager,
         IDeviceManager deviceManager,
@@ -65,7 +67,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         ILogger<PlayerBridgeService> logger)
     {
         _connection = connection;
-        _discovery = discovery;
+        _integrations = integrations.ToList();
         _artwork = artwork;
         _sessionManager = sessionManager;
         _deviceManager = deviceManager;
@@ -137,7 +139,8 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         || !string.Equals(a.Password, b.Password, StringComparison.Ordinal)
         || !string.Equals(a.ClientId, b.ClientId, StringComparison.Ordinal)
         || !string.Equals(a.BaseTopic, b.BaseTopic, StringComparison.Ordinal)
-        || !string.Equals(a.DiscoveryPrefix, b.DiscoveryPrefix, StringComparison.Ordinal);
+        || !string.Equals(a.DiscoveryPrefix, b.DiscoveryPrefix, StringComparison.Ordinal)
+        || !a.EnabledIntegrations.SequenceEqual(b.EnabledIntegrations, StringComparer.Ordinal);
 
     private void OnConfigurationChanged(object? sender, BasePluginConfiguration e)
     {
@@ -185,23 +188,29 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     private async Task ApplyConfigurationAsync(PluginConfiguration config)
     {
         bool reconnect;
+        IntegrationContext context;
         await _lock.WaitAsync(Token).ConfigureAwait(false);
         try
         {
-            var previous = _settings is null ? null : _config;
+            var previous = _context?.Configuration;
             reconnect = previous is null || ConnectionChanged(previous, config);
 
             if (reconnect && previous is not null && _connection.IsConnected)
             {
-                // Topics may move, so withdraw everything published under the previous settings.
+                // Topics or integrations may change, so withdraw everything published under the previous settings.
                 foreach (var device in _devices.Values)
                 {
                     await WithdrawAsync(device.Key).ConfigureAwait(false);
                 }
             }
 
-            _config = config;
-            _settings = new DiscoverySettings(config.DiscoveryPrefix, new PlayerTopics(config.BaseTopic, _applicationHost.SystemId));
+            context = _context = new IntegrationContext(_connection, new BridgeTopics(config.BaseTopic, _applicationHost.SystemId), config);
+            _enabled = _integrations.Where(i => config.EnabledIntegrations.Contains(i.Id, StringComparer.Ordinal)).ToList();
+            foreach (var unknown in config.EnabledIntegrations.Where(id => _integrations.All(i => i.Id != id)))
+            {
+                _logger.LogWarning("Unknown integration {Integration} in configuration", unknown);
+            }
+
             _allowedUsers = config.AllowedUserIds
                 .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty)
                 .Where(id => id != Guid.Empty)
@@ -222,7 +231,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         if (reconnect)
         {
             // Outside the lock: stopping waits on the connection loop, which may be waiting on the lock.
-            await _connection.StartAsync(config, _settings.Topics.StatusTopic).ConfigureAwait(false);
+            await _connection.StartAsync(config, context.Topics.StatusTopic).ConfigureAwait(false);
         }
         else
         {
@@ -232,27 +241,27 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
 
     private async Task OnConnectedAsync()
     {
-        string? discoveryFilter;
-        string stateFilter;
+        List<string> cleanupFilters;
         await _lock.WaitAsync(Token).ConfigureAwait(false);
         try
         {
-            var settings = _settings!;
-            await _connection.SubscribeAsync(settings.Topics.CommandFilter, Token).ConfigureAwait(false);
+            var context = _context!;
+            foreach (var filter in _enabled.SelectMany(i => i.GetSubscriptions(context)).Distinct(StringComparer.Ordinal))
+            {
+                await _connection.SubscribeAsync(filter, Token).ConfigureAwait(false);
+            }
 
+            _devices.Clear();
             _published.Clear();
             await SyncLockedAsync().ConfigureAwait(false);
 
             // Retained messages of players that are no longer exposed come back on these
-            // subscriptions, and get cleared while the window is open.
-            discoveryFilter = _discovery.GetCleanupFilter(settings);
-            stateFilter = settings.Topics.StateFilter;
-            if (discoveryFilter is not null)
+            // subscriptions, and get cleared by their integration while the window is open.
+            cleanupFilters = _enabled.SelectMany(i => i.GetCleanupFilters(context)).Distinct(StringComparer.Ordinal).ToList();
+            foreach (var filter in cleanupFilters)
             {
-                await _connection.SubscribeAsync(discoveryFilter, Token).ConfigureAwait(false);
+                await _connection.SubscribeAsync(filter, Token).ConfigureAwait(false);
             }
-
-            await _connection.SubscribeAsync(stateFilter, Token).ConfigureAwait(false);
         }
         finally
         {
@@ -262,12 +271,10 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         Run(async () =>
         {
             await Task.Delay(_cleanupWindow, Token).ConfigureAwait(false);
-            if (discoveryFilter is not null)
+            foreach (var filter in cleanupFilters)
             {
-                await _connection.UnsubscribeAsync(discoveryFilter, Token).ConfigureAwait(false);
+                await _connection.UnsubscribeAsync(filter, Token).ConfigureAwait(false);
             }
-
-            await _connection.UnsubscribeAsync(stateFilter, Token).ConfigureAwait(false);
         });
     }
 
@@ -276,26 +283,27 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         await _lock.WaitAsync(Token).ConfigureAwait(false);
         try
         {
-            var settings = _settings!;
-            if (settings.Topics.ParseKey(topic, "command") is { } commandKey)
-            {
-                await HandleCommandLockedAsync(commandKey, payload).ConfigureAwait(false);
-                return;
-            }
-
+            var context = _context!;
             var exposedKeys = _devices.Values.Select(d => d.Key).ToHashSet(StringComparer.Ordinal);
-            if (settings.Topics.ParseKey(topic, "state") is { } stateKey)
+            foreach (var integration in _enabled)
             {
-                if (payload.Length > 0 && !exposedKeys.Contains(stateKey))
+                PlayerCommands? received;
+                try
                 {
-                    await _connection.PublishAsync(topic, string.Empty, true, Token).ConfigureAwait(false);
-                    await _connection.PublishAsync(settings.Topics.ImageTopic(stateKey), string.Empty, true, Token).ConfigureAwait(false);
+                    received = await integration.HandleMessageAsync(context, topic, payload, exposedKeys, Token).ConfigureAwait(false);
+                }
+                catch (FormatException ex)
+                {
+                    _logger.LogWarning("Invalid command on {Topic}: {Message}", topic, ex.Message);
+                    return;
                 }
 
-                return;
+                if (received is not null)
+                {
+                    await ExecuteLockedAsync(received).ConfigureAwait(false);
+                    return;
+                }
             }
-
-            await _discovery.CleanupAsync(settings, topic, payload, exposedKeys, Token).ConfigureAwait(false);
         }
         finally
         {
@@ -303,12 +311,12 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         }
     }
 
-    private async Task HandleCommandLockedAsync(string key, string payload)
+    private async Task ExecuteLockedAsync(PlayerCommands received)
     {
-        var device = _devices.Values.FirstOrDefault(d => string.Equals(d.Key, key, StringComparison.Ordinal));
+        var device = _devices.Values.FirstOrDefault(d => string.Equals(d.Key, received.DeviceKey, StringComparison.Ordinal));
         if (device is null)
         {
-            _logger.LogDebug("Ignoring command for unknown player {Key}", key);
+            _logger.LogDebug("Ignoring command for unknown player {Key}", received.DeviceKey);
             return;
         }
 
@@ -319,19 +327,18 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             return;
         }
 
-        try
+        foreach (var command in received.Commands)
         {
-            await PlayerCommands.ExecuteAsync(_sessionManager, session.Id, payload, Token).ConfigureAwait(false);
-        }
-        catch (FormatException ex)
-        {
-            _logger.LogWarning("Invalid command for {Device}: {Message}", device.Name, ex.Message);
-        }
+            try
+            {
+                await PlayerCommandExecutor.ExecuteAsync(_sessionManager, session.Id, command, Token).ConfigureAwait(false);
+            }
 #pragma warning disable CA1031 // A client refusing a command must not break the bridge.
-        catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
-        {
-            _logger.LogWarning(ex, "Command for {Device} failed", device.Name);
+            {
+                _logger.LogWarning(ex, "Command {Command} for {Device} failed", command.Kind, device.Name);
+            }
         }
     }
 
@@ -376,7 +383,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             return;
         }
 
-        var settings = _settings!;
+        var context = _context!;
         var current = ComputeDevices();
 
         foreach (var removed in _devices.Values.Where(d => !current.ContainsKey(d.DeviceId)).ToList())
@@ -396,7 +403,11 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
                     _logger.LogInformation("Exposing {Device} ({App})", device.Name, device.AppName);
                 }
 
-                await _discovery.PublishAsync(settings, device, Token).ConfigureAwait(false);
+                foreach (var integration in _enabled)
+                {
+                    await integration.PublishDeviceAsync(context, device, Token).ConfigureAwait(false);
+                }
+
                 _devices[device.DeviceId] = device;
             }
 
@@ -406,40 +417,40 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
 
     private async Task WithdrawAsync(string key)
     {
-        var settings = _settings!;
-        await _discovery.RemoveAsync(settings, key, Token).ConfigureAwait(false);
-        await _connection.PublishAsync(settings.Topics.StateTopic(key), string.Empty, true, Token).ConfigureAwait(false);
-        await _connection.PublishAsync(settings.Topics.ImageTopic(key), string.Empty, true, Token).ConfigureAwait(false);
+        foreach (var integration in _enabled)
+        {
+            await integration.RemoveDeviceAsync(_context!, key, Token).ConfigureAwait(false);
+        }
     }
 
     private async Task PublishStateLockedAsync(ExposedDevice device)
     {
-        var state = PlayerStateBuilder.Build(device, FindSession(device.DeviceId), _config.ServerUrl);
-        var stable = state.ToPayload(includePosition: false);
-        var full = state.ToPayload();
+        var state = PlayerStateBuilder.Build(device, FindSession(device.DeviceId), _context!.Configuration.ServerUrl);
         var now = DateTime.UtcNow;
-        var topics = _settings!.Topics;
 
         _published.TryGetValue(device.DeviceId, out var previous);
         if (previous is not null)
         {
             // Position-only changes are throttled; anything else goes out immediately.
-            var positionOnly = string.Equals(previous.Stable, stable, StringComparison.Ordinal) && previous.Image == state.MediaImage;
-            if (positionOnly && (string.Equals(previous.Full, full, StringComparison.Ordinal) || now - previous.At < _positionInterval))
+            var positionOnly = previous.State with { MediaPosition = null } == state with { MediaPosition = null };
+            if (positionOnly && (previous.State == state || now - previous.At < _positionInterval))
             {
                 return;
             }
         }
 
-        // The image goes out before the state, so consumers never show new metadata with old artwork.
-        if (previous is null || previous.Image != state.MediaImage)
+        var image = state.MediaImage;
+        var update = new PlayerUpdate(
+            device,
+            state,
+            previous is null || previous.State.MediaImage != image,
+            ct => image is null ? Task.FromResult<byte[]?>(null) : _artwork.LoadAsync(image, ct));
+        foreach (var integration in _enabled)
         {
-            var bytes = state.MediaImage is null ? null : await _artwork.LoadAsync(state.MediaImage, Token).ConfigureAwait(false);
-            await _connection.PublishAsync(topics.ImageTopic(device.Key), bytes ?? [], true, Token).ConfigureAwait(false);
+            await integration.PublishStateAsync(_context, update, Token).ConfigureAwait(false);
         }
 
-        await _connection.PublishAsync(topics.StateTopic(device.Key), full, true, Token).ConfigureAwait(false);
-        _published[device.DeviceId] = new PublishedState(stable, full, state.MediaImage, now);
+        _published[device.DeviceId] = new PublishedState(state, now);
     }
 
     private Dictionary<string, ExposedDevice> ComputeDevices()
@@ -455,7 +466,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
                 }
 
                 var name = string.IsNullOrWhiteSpace(info.CustomName) ? info.Name : info.CustomName;
-                devices[info.Id] = new ExposedDevice(info.Id, PlayerTopics.DeviceKey(info.Id), name ?? info.Id, info.AppName, info.AppVersion);
+                devices[info.Id] = new ExposedDevice(info.Id, BridgeTopics.DeviceKey(info.Id), name ?? info.Id, info.AppName, info.AppVersion);
             }
         }
 
@@ -468,7 +479,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             {
                 devices[session.DeviceId] = new ExposedDevice(
                     session.DeviceId,
-                    PlayerTopics.DeviceKey(session.DeviceId),
+                    BridgeTopics.DeviceKey(session.DeviceId),
                     session.DeviceName ?? session.DeviceId,
                     session.Client,
                     session.ApplicationVersion);
@@ -488,5 +499,5 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             .ThenByDescending(s => s.LastActivityDate)
             .FirstOrDefault();
 
-    private sealed record PublishedState(string Stable, string Full, ImageReference? Image, DateTime At);
+    private sealed record PublishedState(PlayerState State, DateTime At);
 }

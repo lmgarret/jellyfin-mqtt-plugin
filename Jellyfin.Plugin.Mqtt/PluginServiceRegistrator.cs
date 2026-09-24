@@ -1,4 +1,5 @@
-using Jellyfin.Plugin.Mqtt.HomeAssistant;
+using Jellyfin.Plugin.Mqtt.Integrations;
+using Jellyfin.Plugin.Mqtt.Integrations.UniversalMediaPlayer;
 using Jellyfin.Plugin.Mqtt.Mqtt;
 using Jellyfin.Plugin.Mqtt.Players;
 using MediaBrowser.Controller;
@@ -17,7 +18,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddSingleton<MqttConnection>();
         serviceCollection.AddSingleton<ArtworkLoader>();
-        serviceCollection.AddSingleton<IDiscoveryPublisher, MediaPlayerDiscoveryPublisher>();
+        serviceCollection.AddSingleton<IPlayerIntegration, UniversalMediaPlayerIntegration>();
         serviceCollection.AddHostedService<PlayerBridgeService>();
     }
 }

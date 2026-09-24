@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Generic;
-using System.Text.Json;
 
 namespace Jellyfin.Plugin.Mqtt.Players;
 
 /// <summary>
-/// The state of a player, as published on its state topic.
+/// The state of a player, independent of any wire format.
 /// </summary>
 public sealed record PlayerState
 {
@@ -75,12 +73,12 @@ public sealed record PlayerState
     public int? MediaEpisode { get; init; }
 
     /// <summary>
-    /// Gets the content type of the playing item, using Home Assistant media types.
+    /// Gets the content type of the playing item: music, episode, movie, channel, image or video.
     /// </summary>
     public string? MediaContentType { get; init; }
 
     /// <summary>
-    /// Gets the artwork of the playing item. Published on its own topic, not in the payload.
+    /// Gets the artwork of the playing item.
     /// </summary>
     public ImageReference? MediaImage { get; init; }
 
@@ -98,41 +96,4 @@ public sealed record PlayerState
     /// Gets the duration of the playing item.
     /// </summary>
     public TimeSpan? MediaDuration { get; init; }
-
-    /// <summary>
-    /// Serializes the state. Every key is always present, so consumers merging
-    /// partial updates drop values that no longer apply.
-    /// </summary>
-    /// <param name="includePosition">Whether to include the playback position.</param>
-    /// <returns>The JSON payload.</returns>
-    public string ToPayload(bool includePosition = true)
-    {
-        var payload = new Dictionary<string, object?>
-        {
-            ["state"] = Status.ToString().ToLowerInvariant(),
-            ["volume"] = Volume,
-            ["muted"] = Muted,
-            ["media_id"] = MediaId,
-            ["media_title"] = MediaTitle,
-            ["media_artist"] = MediaArtist,
-            ["media_album_name"] = MediaAlbumName,
-            ["media_series_title"] = MediaSeriesTitle,
-            ["media_season"] = MediaSeason,
-            ["media_episode"] = MediaEpisode,
-            ["media_content_type"] = MediaContentType,
-            ["media_image_url"] = MediaImageUrl,
-            ["media_duration"] = Seconds(MediaDuration),
-            ["app_name"] = AppName,
-            ["device_name"] = DeviceName,
-            ["user"] = UserName,
-        };
-        if (includePosition)
-        {
-            payload["media_position"] = Seconds(MediaPosition);
-        }
-
-        return JsonSerializer.Serialize(payload);
-    }
-
-    private static long? Seconds(TimeSpan? value) => value is null ? null : (long)value.Value.TotalSeconds;
 }
