@@ -63,6 +63,13 @@ public sealed class PlayerTopics
     public string StateTopic(string key) => $"{BaseTopic}/{PlayersSegment}/{key}/state";
 
     /// <summary>
+    /// Gets the topic carrying the raw artwork of a player.
+    /// </summary>
+    /// <param name="key">The device key.</param>
+    /// <returns>The topic.</returns>
+    public string ImageTopic(string key) => $"{BaseTopic}/{PlayersSegment}/{key}/image";
+
+    /// <summary>
     /// Gets the command topic of a player.
     /// </summary>
     /// <param name="key">The device key.</param>

@@ -70,7 +70,9 @@ public class PlayerStateBuilderTests
         Assert.Equal(2, state.MediaEpisode);
         Assert.Equal("episode", state.MediaContentType);
         Assert.Equal($"http://jf/Items/{seriesId:N}/Images/Primary?tag=tag&maxWidth=600", state.MediaImageUrl);
+        Assert.Equal(new ImageReference(seriesId, "tag"), state.MediaImage);
         Assert.Equal(TimeSpan.FromSeconds(90), state.MediaPosition);
+        Assert.Null(PlayerStateBuilder.Build(_device, session, string.Empty).MediaImageUrl);
     }
 
     [Fact]

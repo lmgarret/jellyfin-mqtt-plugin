@@ -55,8 +55,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string DiscoveryPrefix { get; set; } = "homeassistant";
 
     /// <summary>
-    /// Gets or sets the Jellyfin URL reachable by MQTT consumers, used for artwork links.
-    /// Artwork is not published while empty.
+    /// Gets or sets the Jellyfin URL reachable by MQTT consumers, used for the artwork link in the state.
+    /// The link is omitted while empty; the artwork itself is always published on the image topic.
     /// </summary>
     public string ServerUrl { get; set; } = string.Empty;
 

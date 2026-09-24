@@ -18,7 +18,7 @@ public static class PlayerStateBuilder
     /// </summary>
     /// <param name="device">The exposed device.</param>
     /// <param name="session">The session currently open on the device, if any.</param>
-    /// <param name="serverUrl">The server URL used for artwork links, empty to omit artwork.</param>
+    /// <param name="serverUrl">The server URL used for artwork links, empty to omit the link.</param>
     /// <returns>The player state.</returns>
     public static PlayerState Build(ExposedDevice device, SessionInfo? session, string serverUrl)
     {
@@ -48,6 +48,7 @@ public static class PlayerStateBuilder
             return state;
         }
 
+        var image = Image(item);
         return state with
         {
             Status = playState?.IsPaused == true ? PlayerStatus.Paused : PlayerStatus.Playing,
@@ -59,7 +60,8 @@ public static class PlayerStateBuilder
             MediaSeason = item.Type == BaseItemKind.Episode ? item.ParentIndexNumber : null,
             MediaEpisode = item.Type == BaseItemKind.Episode ? item.IndexNumber : null,
             MediaContentType = ContentType(item),
-            MediaImageUrl = ImageUrl(item, serverUrl),
+            MediaImage = image,
+            MediaImageUrl = ImageUrl(image, serverUrl),
             MediaPosition = playState?.PositionTicks is long position ? TimeSpan.FromTicks(position) : null,
             MediaDuration = item.RunTimeTicks is long runtime ? TimeSpan.FromTicks(runtime) : null,
         };
@@ -85,13 +87,8 @@ public static class PlayerStateBuilder
         _ => item.MediaType == MediaType.Audio ? "music" : "video",
     };
 
-    private static string? ImageUrl(BaseItemDto item, string serverUrl)
+    private static ImageReference? Image(BaseItemDto item)
     {
-        if (string.IsNullOrWhiteSpace(serverUrl))
-        {
-            return null;
-        }
-
         (Guid? id, string? tag) = item.ImageTags?.TryGetValue(ImageType.Primary, out var primaryTag) == true
             ? (item.Id, primaryTag)
             : item.Type switch
@@ -102,14 +99,19 @@ public static class PlayerStateBuilder
                 _ => ((Guid?)null, (string?)null),
             };
 
-        if (id is null || tag is null)
+        return id is null || tag is null ? null : new ImageReference(id.Value, tag);
+    }
+
+    private static string? ImageUrl(ImageReference? image, string serverUrl)
+    {
+        if (image is null || string.IsNullOrWhiteSpace(serverUrl))
         {
             return null;
         }
 
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{serverUrl.TrimEnd('/')}/Items/{id.Value:N}/Images/Primary?tag={Uri.EscapeDataString(tag)}&maxWidth=600");
+            $"{serverUrl.TrimEnd('/')}/Items/{image.ItemId:N}/Images/Primary?tag={Uri.EscapeDataString(image.Tag)}&maxWidth=600");
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;

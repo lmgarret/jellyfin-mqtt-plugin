@@ -16,6 +16,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<MqttConnection>();
+        serviceCollection.AddSingleton<ArtworkLoader>();
         serviceCollection.AddSingleton<IDiscoveryPublisher, MediaPlayerDiscoveryPublisher>();
         serviceCollection.AddHostedService<PlayerBridgeService>();
     }

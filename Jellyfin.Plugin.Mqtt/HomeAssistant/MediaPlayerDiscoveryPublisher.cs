@@ -45,6 +45,7 @@ public class MediaPlayerDiscoveryPublisher : IDiscoveryPublisher
             ["state_topic"] = config.Topics.StateTopic(device.Key),
             ["command_topic"] = config.Topics.CommandTopic(device.Key),
             ["availability_topic"] = config.Topics.StatusTopic,
+            ["image_topic"] = config.Topics.ImageTopic(device.Key),
             ["payload_available"] = MqttConnection.OnlinePayload,
             ["payload_not_available"] = MqttConnection.OfflinePayload,
             ["device"] = new Dictionary<string, object?>

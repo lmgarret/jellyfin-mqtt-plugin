@@ -80,6 +80,11 @@ public sealed record PlayerState
     public string? MediaContentType { get; init; }
 
     /// <summary>
+    /// Gets the artwork of the playing item. Published on its own topic, not in the payload.
+    /// </summary>
+    public ImageReference? MediaImage { get; init; }
+
+    /// <summary>
     /// Gets the artwork URL of the playing item.
     /// </summary>
     public string? MediaImageUrl { get; init; }

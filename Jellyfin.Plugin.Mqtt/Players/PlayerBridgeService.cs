@@ -27,6 +27,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
 
     private readonly MqttConnection _connection;
     private readonly IDiscoveryPublisher _discovery;
+    private readonly ArtworkLoader _artwork;
     private readonly ISessionManager _sessionManager;
     private readonly IDeviceManager _deviceManager;
     private readonly IServerApplicationHost _applicationHost;
@@ -49,6 +50,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     /// </summary>
     /// <param name="connection">The MQTT connection.</param>
     /// <param name="discovery">The discovery publisher.</param>
+    /// <param name="artwork">The artwork loader.</param>
     /// <param name="sessionManager">The session manager.</param>
     /// <param name="deviceManager">The device manager.</param>
     /// <param name="applicationHost">The server application host.</param>
@@ -56,6 +58,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     public PlayerBridgeService(
         MqttConnection connection,
         IDiscoveryPublisher discovery,
+        ArtworkLoader artwork,
         ISessionManager sessionManager,
         IDeviceManager deviceManager,
         IServerApplicationHost applicationHost,
@@ -63,6 +66,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     {
         _connection = connection;
         _discovery = discovery;
+        _artwork = artwork;
         _sessionManager = sessionManager;
         _deviceManager = deviceManager;
         _applicationHost = applicationHost;
@@ -285,6 +289,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
                 if (payload.Length > 0 && !exposedKeys.Contains(stateKey))
                 {
                     await _connection.PublishAsync(topic, string.Empty, true, Token).ConfigureAwait(false);
+                    await _connection.PublishAsync(settings.Topics.ImageTopic(stateKey), string.Empty, true, Token).ConfigureAwait(false);
                 }
 
                 return;
@@ -404,6 +409,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         var settings = _settings!;
         await _discovery.RemoveAsync(settings, key, Token).ConfigureAwait(false);
         await _connection.PublishAsync(settings.Topics.StateTopic(key), string.Empty, true, Token).ConfigureAwait(false);
+        await _connection.PublishAsync(settings.Topics.ImageTopic(key), string.Empty, true, Token).ConfigureAwait(false);
     }
 
     private async Task PublishStateLockedAsync(ExposedDevice device)
@@ -412,19 +418,28 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         var stable = state.ToPayload(includePosition: false);
         var full = state.ToPayload();
         var now = DateTime.UtcNow;
+        var topics = _settings!.Topics;
 
-        if (_published.TryGetValue(device.DeviceId, out var previous))
+        _published.TryGetValue(device.DeviceId, out var previous);
+        if (previous is not null)
         {
             // Position-only changes are throttled; anything else goes out immediately.
-            var positionOnly = string.Equals(previous.Stable, stable, StringComparison.Ordinal);
+            var positionOnly = string.Equals(previous.Stable, stable, StringComparison.Ordinal) && previous.Image == state.MediaImage;
             if (positionOnly && (string.Equals(previous.Full, full, StringComparison.Ordinal) || now - previous.At < _positionInterval))
             {
                 return;
             }
         }
 
-        await _connection.PublishAsync(_settings!.Topics.StateTopic(device.Key), full, true, Token).ConfigureAwait(false);
-        _published[device.DeviceId] = new PublishedState(stable, full, now);
+        // The image goes out before the state, so consumers never show new metadata with old artwork.
+        if (previous is null || previous.Image != state.MediaImage)
+        {
+            var bytes = state.MediaImage is null ? null : await _artwork.LoadAsync(state.MediaImage, Token).ConfigureAwait(false);
+            await _connection.PublishAsync(topics.ImageTopic(device.Key), bytes ?? [], true, Token).ConfigureAwait(false);
+        }
+
+        await _connection.PublishAsync(topics.StateTopic(device.Key), full, true, Token).ConfigureAwait(false);
+        _published[device.DeviceId] = new PublishedState(stable, full, state.MediaImage, now);
     }
 
     private Dictionary<string, ExposedDevice> ComputeDevices()
@@ -473,5 +488,5 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             .ThenByDescending(s => s.LastActivityDate)
             .FirstOrDefault();
 
-    private sealed record PublishedState(string Stable, string Full, DateTime At);
+    private sealed record PublishedState(string Stable, string Full, ImageReference? Image, DateTime At);
 }

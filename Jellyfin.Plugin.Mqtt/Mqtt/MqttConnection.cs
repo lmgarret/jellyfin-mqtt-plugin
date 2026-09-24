@@ -127,7 +127,18 @@ public sealed class MqttConnection : IAsyncDisposable
     /// <param name="retain">Whether the broker retains the message.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task that completes once the message is published.</returns>
-    public async Task PublishAsync(string topic, string payload, bool retain, CancellationToken cancellationToken)
+    public Task PublishAsync(string topic, string payload, bool retain, CancellationToken cancellationToken)
+        => PublishAsync(topic, System.Text.Encoding.UTF8.GetBytes(payload), retain, cancellationToken);
+
+    /// <summary>
+    /// Publishes a binary message with QoS 1. Does nothing while disconnected.
+    /// </summary>
+    /// <param name="topic">The topic.</param>
+    /// <param name="payload">The payload, empty to clear a retained message.</param>
+    /// <param name="retain">Whether the broker retains the message.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task that completes once the message is published.</returns>
+    public async Task PublishAsync(string topic, byte[] payload, bool retain, CancellationToken cancellationToken)
     {
         if (!_client.IsConnected)
         {

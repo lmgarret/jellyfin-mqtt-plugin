@@ -59,9 +59,9 @@
                             <div class="fieldDescription">Players are announced for the mqtt_universal_media_player custom integration.</div>
                         </div>
                         <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="ServerUrl">Server URL for artwork</label>
+                            <label class="inputLabel inputLabelUnfocused" for="ServerUrl">Server URL for artwork links (optional)</label>
                             <input id="ServerUrl" type="url" is="emby-input" placeholder="http://jellyfin.local:8096" />
-                            <div class="fieldDescription">Jellyfin URL reachable from Home Assistant. Artwork is not published while empty.</div>
+                            <div class="fieldDescription">Artwork is always published as image bytes on &lt;base&gt;/players/&lt;id&gt;/image. When set, the state also carries a media_image_url link built from this URL.</div>
                         </div>
                     </div>
 
