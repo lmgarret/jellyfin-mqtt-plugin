@@ -71,7 +71,8 @@ jobs:
         with:
           languages: csharp
           build-mode: manual
-          queries: security-and-quality
+          # Code quality is covered by the Roslyn analyzers in the build.
+          queries: security-extended
       - run: dotnet build Jellyfin.Plugin.Mqtt.slnx --configuration Release
       # Code scanning (the Security tab) is unavailable on private repos
       # without GitHub Code Security, so keep the SARIF locally and gate on it.
