@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>MQTT</title>
+</head>
+<body>
+    <div id="MqttConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="MqttConfigForm">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Broker</h2>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="BrokerHost">Host</label>
+                            <input id="BrokerHost" type="text" is="emby-input" />
+                            <div class="fieldDescription">The bridge stays idle while empty.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="BrokerPort">Port</label>
+                            <input id="BrokerPort" type="number" is="emby-input" min="1" max="65535" />
+                        </div>
+                        <div class="checkboxContainer">
+                            <label class="emby-checkbox-label">
+                                <input id="UseTls" type="checkbox" is="emby-checkbox" />
+                                <span>Use TLS</span>
+                            </label>
+                        </div>
+                        <div class="checkboxContainer">
+                            <label class="emby-checkbox-label">
+                                <input id="AllowUntrustedCertificates" type="checkbox" is="emby-checkbox" />
+                                <span>Accept untrusted certificates</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="Username">Username</label>
+                            <input id="Username" type="text" is="emby-input" autocomplete="off" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="Password">Password</label>
+                            <input id="Password" type="password" is="emby-input" autocomplete="new-password" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ClientId">Client id</label>
+                            <input id="ClientId" type="text" is="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Topics</h2>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="BaseTopic">Base topic</label>
+                            <input id="BaseTopic" type="text" is="emby-input" />
+                            <div class="fieldDescription">Prefix of every topic published by the plugin. Use a different base topic per Jellyfin server.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="ServerUrl">Server URL for artwork links (optional)</label>
+                            <input id="ServerUrl" type="url" is="emby-input" placeholder="http://jellyfin.local:8096" />
+                            <div class="fieldDescription">Artwork is always published as image bytes. When set, player states also carry an artwork link built from this URL.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Integrations</h2>
+                        <div class="fieldDescription">Each integration publishes the players in the MQTT format of one consumer.</div>
+                        <div class="checkboxContainer checkboxContainer-withDescription">
+                            <label class="emby-checkbox-label">
+                                <input type="checkbox" is="emby-checkbox" class="mqttIntegration" data-id="mqtt_universal_media_player" />
+                                <span>Home Assistant: MQTT Universal Media Player</span>
+                            </label>
+                            <div class="fieldDescription checkboxFieldDescription">Requires the mqtt_universal_media_player custom integration, 0.3.0 or later.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="DiscoveryPrefix">Home Assistant discovery prefix</label>
+                            <input id="DiscoveryPrefix" type="text" is="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Exposed players</h2>
+                        <div class="fieldDescription">Only devices of the selected users are published. Uncheck a device to hide it.</div>
+                        <div id="UserList"></div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '1b020142-51af-4034-b9e6-650165ae0be0';
+                var page = document.querySelector('#MqttConfigPage');
+                var textFields = ['BrokerHost', 'Username', 'Password', 'ClientId', 'BaseTopic', 'DiscoveryPrefix', 'ServerUrl'];
+                var checkFields = ['UseTls', 'AllowUntrustedCertificates'];
+                var users = [];
+                var devices = [];
+                var excluded = [];
+
+                function escapeHtml(value) {
+                    var div = document.createElement('div');
+                    div.textContent = value == null ? '' : String(value);
+                    return div.innerHTML;
+                }
+
+                function checkbox(cls, id, label, checked) {
+                    return '<label class="emby-checkbox-label"><input type="checkbox" is="emby-checkbox" class="' + cls + '" data-id="'
+                        + escapeHtml(id) + '"' + (checked ? ' checked' : '') + ' /><span>' + label + '</span></label>';
+                }
+
+                function renderUsers(allowed) {
+                    var html = users.map(function (user) {
+                        var isAllowed = allowed.indexOf(user.Id) !== -1;
+                        var userDevices = devices.filter(function (d) { return d.LastUserId === user.Id; });
+                        var deviceHtml = userDevices.map(function (d) {
+                            var name = escapeHtml(d.CustomName || d.Name) + ' <span class="fieldDescription">' + escapeHtml(d.AppName) + '</span>';
+                            return '<div class="checkboxContainer" style="margin-left:2em">' + checkbox('mqttDevice', d.Id, name, excluded.indexOf(d.Id) === -1) + '</div>';
+                        }).join('');
+                        if (isAllowed && !userDevices.length) {
+                            deviceHtml = '<div class="fieldDescription" style="margin-left:2em">No devices yet.</div>';
+                        }
+
+                        return '<div class="checkboxContainer">' + checkbox('mqttUser', user.Id, escapeHtml(user.Name), isAllowed) + '</div>'
+                            + (isAllowed ? deviceHtml : '');
+                    }).join('');
+                    page.querySelector('#UserList').innerHTML = html;
+                }
+
+                function selectedUsers() {
+                    return Array.prototype.filter.call(page.querySelectorAll('.mqttUser'), function (c) { return c.checked; })
+                        .map(function (c) { return c.getAttribute('data-id'); });
+                }
+
+                function collectExcluded() {
+                    var shown = page.querySelectorAll('.mqttDevice');
+                    var shownIds = Array.prototype.map.call(shown, function (c) { return c.getAttribute('data-id'); });
+                    // Keep exclusions of devices not currently displayed.
+                    var result = excluded.filter(function (id) { return shownIds.indexOf(id) === -1; });
+                    Array.prototype.forEach.call(shown, function (c) {
+                        if (!c.checked && result.indexOf(c.getAttribute('data-id')) === -1) {
+                            result.push(c.getAttribute('data-id'));
+                        }
+                    });
+                    return result;
+                }
+
+                page.querySelector('#UserList').addEventListener('change', function (e) {
+                    if (e.target.classList.contains('mqttUser')) {
+                        excluded = collectExcluded();
+                        renderUsers(selectedUsers());
+                    }
+                });
+
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    Promise.all([
+                        ApiClient.getPluginConfiguration(pluginId),
+                        ApiClient.getUsers(),
+                        ApiClient.getJSON(ApiClient.getUrl('Devices'))
+                    ]).then(function (results) {
+                        var config = results[0];
+                        users = results[1];
+                        devices = results[2].Items || [];
+                        excluded = config.ExcludedDeviceIds || [];
+                        textFields.forEach(function (f) { page.querySelector('#' + f).value = config[f] || ''; });
+                        checkFields.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
+                        page.querySelector('#BrokerPort').value = config.BrokerPort;
+                        var enabled = config.EnabledIntegrations || [];
+                        page.querySelectorAll('.mqttIntegration').forEach(function (c) { c.checked = enabled.indexOf(c.getAttribute('data-id')) !== -1; });
+                        renderUsers(config.AllowedUserIds || []);
+                    }).finally(function () {
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                page.querySelector('#MqttConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        textFields.forEach(function (f) { var v = page.querySelector('#' + f).value; config[f] = f === 'Password' ? v : v.trim(); });
+                        checkFields.forEach(function (f) { config[f] = page.querySelector('#' + f).checked; });
+                        config.BrokerPort = parseInt(page.querySelector('#BrokerPort').value, 10) || 1883;
+                        config.EnabledIntegrations = Array.prototype.filter.call(page.querySelectorAll('.mqttIntegration'), function (c) { return c.checked; })
+                            .map(function (c) { return c.getAttribute('data-id'); });
+                        config.AllowedUserIds = selectedUsers();
+                        config.ExcludedDeviceIds = excluded = collectExcluded();
+                        return ApiClient.updatePluginConfiguration(pluginId, config);
+                    }).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>
