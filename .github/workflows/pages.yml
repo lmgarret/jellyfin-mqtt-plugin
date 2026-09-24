@@ -1,0 +1,69 @@
+name: Plugin repository
+
+# Rebuilds the Jellyfin plugin repository manifests from the GitHub Releases
+# and deploys them to GitHub Pages. Stateless: every run regenerates both
+# manifests from scratch, so it is safe to re-run at any time.
+#   manifest.json           stable releases (vX.Y.Z)
+#   manifest-unstable.json  stable releases + the rolling `edge` prerelease
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  JPRM_VERSION: 1.1.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: pip install "jprm==${JPRM_VERSION}"
+      - name: Build manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p stable unstable site
+          jprm repo init stable
+          jprm repo init unstable
+          gh release list --limit 1000 --json tagName,isDraft,isPrerelease \
+            --jq '.[] | select(.isDraft | not) | "\(.tagName) \(.isPrerelease)"' |
+          while read -r TAG PRERELEASE; do
+            gh release download "$TAG" --pattern '*.zip' --dir "dl/$TAG" || continue
+            for ZIP in "dl/$TAG"/*.zip; do
+              URL="https://github.com/${GH_REPO}/releases/download/${TAG}/$(basename "$ZIP")"
+              if [ "$PRERELEASE" = false ]; then
+                jprm repo add stable "$ZIP" --plugin-url "$URL"
+              fi
+              jprm repo add unstable "$ZIP" --plugin-url "$URL"
+            done
+          done
+          cp stable/manifest.json site/manifest.json
+          cp unstable/manifest.json site/manifest-unstable.json
+          cat site/manifest-unstable.json
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

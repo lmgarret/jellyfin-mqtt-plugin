@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version name (e.g. 1.2.3). Leave empty to auto-detect from commits.'
+        required: false
+        type: string
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  JPRM_VERSION: 1.1.0
+
+jobs:
+  resolve-version:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      name: ${{ steps.version.outputs.name }}
+      changelog: ${{ steps.notes.outputs.changelog }}
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install missing language_data dependency
+        run: pip install language_data
+
+      - name: Find previous tag
+        id: prev_tag
+        run: |
+          PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^ 2>/dev/null || echo "")
+          echo "tag=${PREV}" >> "$GITHUB_OUTPUT"
+
+      # Best effort: without it (no API key, LLM outage) the release still
+      # ships with the plain commit log.
+      - name: Generate AI changelog
+        id: changelog
+        continue-on-error: true
+        uses: lmgarret/llm-release-action@v1
+        with:
+          model: anthropic/claude-sonnet-5
+          model_analysis: anthropic/claude-haiku-4-5
+          current_version: ${{ steps.prev_tag.outputs.tag }}
+          changelog_config: |
+            default:
+              languages: [en]
+              tone: professional
+              sections: [breaking, features, improvements, fixes]
+              benefit_focused: true
+              include_infrastructure: false
+              summary_only: false
+              emojis: true
+          context_files: README.md
+          max_commits: 50
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # Jellyfin versions are four numeric parts, so only plain X.Y.Z
+      # releases are accepted; the rolling `edge` build covers prereleases.
+      - name: Resolve release version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          NEXT_VERSION: ${{ steps.changelog.outputs.next_version }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            RAW="${INPUT_VERSION:-$NEXT_VERSION}"
+            VERSION="${RAW#v}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version '${VERSION}' is not X.Y.Z"
+            exit 1
+          fi
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "name=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Compose release notes
+        id: notes
+        env:
+          PREV_TAG: ${{ steps.prev_tag.outputs.tag }}
+          CHANGELOG: ${{ steps.changelog.outputs.changelogs && fromJSON(steps.changelog.outputs.changelogs).default.en || '' }}
+        run: |
+          if [ -n "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline "${PREV_TAG}..HEAD")
+          else
+            COMMITS=$(git log --oneline)
+          fi
+          # Shown in the Jellyfin plugin catalog.
+          PLUGIN_CHANGELOG="${CHANGELOG:-$COMMITS}"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          PAGES="https://${OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            echo "$PLUGIN_CHANGELOG"
+            echo "CHANGELOG_EOF"
+            echo "body<<BODY_EOF"
+            if [ -n "$CHANGELOG" ]; then
+              echo "$CHANGELOG"
+              echo ""
+              echo "---"
+              echo ""
+            fi
+            echo "### Install"
+            echo ""
+            echo "In Jellyfin, go to **Dashboard → Plugins → Repositories**, add the repository below, then install **MQTT** from the catalog:"
+            echo ""
+            echo '```'
+            echo "${PAGES}/manifest.json            # stable releases"
+            echo "${PAGES}/manifest-unstable.json   # stable + rolling edge builds"
+            echo '```'
+            echo ""
+            echo "<details><summary>Full commit log</summary>"
+            echo ""
+            echo '```'
+            echo "$COMMITS"
+            echo '```'
+            echo "</details>"
+            echo "BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Build plugin
+    needs: resolve-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: pip install "jprm==${JPRM_VERSION}"
+      - name: dotnet test
+        run: dotnet test Jellyfin.Plugin.Mqtt.slnx --configuration Release
+      - name: Set changelog
+        env:
+          CHANGELOG: ${{ needs.resolve-version.outputs.changelog }}
+        run: yq -i '.changelog = strenv(CHANGELOG)' build.yaml
+      - name: jprm plugin build
+        run: |
+          mkdir -p artifacts
+          jprm --verbosity=debug plugin build . --output artifacts --version "${{ needs.resolve-version.outputs.name }}.0"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  create-release:
+    name: Create GitHub Release
+    needs: [resolve-version, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin
+      - name: Create versioned release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
+          name: ${{ needs.resolve-version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body: ${{ needs.resolve-version.outputs.body }}
+          files: '*.zip'
+          make_latest: true
+          generate_release_notes: false
+      # Dispatched rather than called so it runs on master, which the
+      # github-pages environment allows by default (tag refs are not).
+      - name: Refresh plugin repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pages.yml --ref master
