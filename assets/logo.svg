@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="jf" gradientUnits="userSpaceOnUse" x1="220" y1="80" x2="1020" y2="560">
+      <stop offset="0" stop-color="#AA5CC3"/>
+      <stop offset="1" stop-color="#00A4DC"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="#101010"/>
+  <!-- Jellyfin-style triangle -->
+  <g stroke-linejoin="round">
+    <path d="M450 100 L650 460 L250 460 Z" fill="url(#jf)" stroke="url(#jf)" stroke-width="60"/>
+    <path d="M450 250 L535 405 L365 405 Z" fill="#101010" stroke="#101010" stroke-width="30"/>
+  </g>
+  <!-- MQTT broadcast waves -->
+  <g fill="none" stroke="url(#jf)" stroke-width="34" stroke-linecap="round">
+    <path d="M760 220 A130 130 0 0 1 760 400"/>
+    <path d="M840 140 A240 240 0 0 1 840 480"/>
+    <path d="M910 90 A300 300 0 0 1 910 530"/>
+  </g>
+  <text x="640" y="665" text-anchor="middle" fill="#ffffff" font-family="Quicksand, 'DejaVu Sans', sans-serif" font-weight="700" font-size="84" letter-spacing="10">MQTT</text>
+</svg>
