@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '24 2 * * 4' # weekly CodeQL scan against fresh queries
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a master run half-way through republishing `edge`.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  JPRM_VERSION: 1.1.0
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-
+      # The plugin project sets TreatWarningsAsErrors, so analyzer warnings
+      # fail here too.
+      - name: dotnet test
+        run: dotnet test Jellyfin.Plugin.Mqtt.slnx --configuration Release
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-
+      - name: dotnet format
+        run: dotnet format Jellyfin.Plugin.Mqtt.slnx --verify-no-changes
+
+  codeql:
+    name: codeql
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: manual
+          # Code quality is covered by the Roslyn analyzers in the build.
+          queries: security-extended
+      - run: dotnet build Jellyfin.Plugin.Mqtt.slnx --configuration Release
+      # Code scanning (the Security tab) is unavailable on private repos
+      # without GitHub Code Security, so keep the SARIF locally and gate on it.
+      - uses: github/codeql-action/analyze@v4
+        with:
+          upload: never
+          output: sarif-results
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: codeql-sarif
+          path: sarif-results
+      - name: Fail on findings
+        run: |
+          # Error/warning findings fail the job; notes are only listed.
+          jq -r '
+            .runs[] | (.tool.driver.rules // []) as $rules | .results[]? |
+            (.level // (if .ruleIndex != null then $rules[.ruleIndex].defaultConfiguration.level else null end) // "warning") as $level |
+            "\($level)\t\(.ruleId)\t\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)\t\(.message.text)"
+          ' sarif-results/*.sarif | tee findings.tsv
+          BLOCKING=$(grep -cE '^(error|warning)' findings.tsv || true)
+          echo "::notice::CodeQL: $(wc -l < findings.tsv) findings, ${BLOCKING} blocking"
+          if [ "$BLOCKING" -gt 0 ]; then
+            grep -E '^(error|warning)' findings.tsv | while IFS=$'\t' read -r LEVEL RULE LOC MSG; do
+              echo "::error title=${RULE}::${LOC} ${MSG}"
+            done
+            exit 1
+          fi
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: pip install "jprm==${JPRM_VERSION}"
+      # Edge builds sort above the last release so the unstable manifest
+      # offers them as an update: after v1.2.3 they are 1.2.4.<run number>.
+      - name: Compute edge version
+        id: version
+        run: |
+          LAST=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v0.0.0)
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LAST#v}"
+          VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).${GITHUB_RUN_NUMBER}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Set changelog
+        env:
+          CHANGELOG: ${{ format('Edge build of {0}', github.sha) }}
+        run: yq -i '.changelog = strenv(CHANGELOG)' build.yaml
+      - name: jprm plugin build
+        run: |
+          mkdir -p artifacts
+          jprm --verbosity=debug plugin build . --output artifacts --version "${{ steps.version.outputs.version }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plugin
+          path: artifacts/*.zip
+          if-no-files-found: error
+
+  edge:
+    name: publish edge
+    runs-on: ubuntu-latest
+    needs: [package, codeql]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin
+      # `edge` is a rolling prerelease: recreate it so the tag follows master.
+      - name: Publish edge prerelease
+        run: |
+          gh release delete edge --yes --cleanup-tag || true
+          gh release create edge ./*.zip \
+            --prerelease \
+            --latest=false \
+            --target "$GITHUB_SHA" \
+            --title "Edge ${VERSION}" \
+            --notes "Rolling build of \`master\` at ${GITHUB_SHA}. Install through the unstable repository: \`https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/manifest-unstable.json\`."
+      # Dispatched rather than called so it runs on master, which the
+      # github-pages environment allows by default.
+      - name: Refresh plugin repository
+        run: gh workflow run pages.yml --ref master

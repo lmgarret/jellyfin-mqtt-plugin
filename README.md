@@ -8,6 +8,13 @@ Publishes Jellyfin clients as media players over MQTT, so home automation tools 
 
 Requires Jellyfin 12.
 
+## Installation
+
+In Jellyfin, open **Dashboard → Plugins → Repositories**, add one of these repositories, then install **MQTT** from the catalog:
+
+- Stable releases: `https://lmgarret.github.io/jellyfin-mqtt-plugin/manifest.json`
+- Stable releases plus the latest `master` build: `https://lmgarret.github.io/jellyfin-mqtt-plugin/manifest-unstable.json`
+
 ## Configuration
 
 In the plugin settings:
@@ -86,3 +93,11 @@ dotnet build Jellyfin.Plugin.Mqtt.slnx
 ```
 
 Copy `Jellyfin.Plugin.Mqtt.dll` and `MQTTnet.dll` from `Jellyfin.Plugin.Mqtt/bin/Debug/net10.0/` into a `Mqtt` folder in the Jellyfin `plugins` directory.
+
+## Releasing
+
+CI (`.github/workflows/ci.yml`) runs tests, `dotnet format`, CodeQL and a `jprm` package build on every pull request and on `master`. Each `master` build is also published as the rolling `edge` prerelease.
+
+To cut a release, push a `vX.Y.Z` tag or run the **Release** workflow. If you run the workflow with no version, the next version is derived from the commits. Either way the workflow builds the plugin, writes the changelog, creates the GitHub release and regenerates the plugin repository on GitHub Pages (`pages.yml`).
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …) so version bumps and changelogs come out right.
