@@ -21,14 +21,14 @@ In the plugin settings:
 
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
 - **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
-- **Integrations**: the MQTT formats players are published in, see below. Only `mqtt_universal_media_player` exists for now, enabled by default.
-- **Exposed players**: no user is exposed by default. Select users to publish their devices, and uncheck devices to hide them.
+- **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. Only `mqtt_universal_media_player` exists for now, enabled by default.
+- **Exposed players**: no user is exposed by default. Select users to publish their devices, and uncheck devices to hide them. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
 
 ## Architecture
 
 The core tracks the exposed devices and their sessions, and builds a format-neutral player state (status, metadata, artwork, volume). It hands every change to the enabled **integrations**, and executes the neutral commands (play, pause, seek, volume, …) they receive.
 
-Each integration owns its topics and payloads, so supporting another consumer means adding an `IPlayerIntegration` (see `Jellyfin.Plugin.Mqtt/Integrations/`) without touching the core. Several integrations can be enabled at once, as long as their topics do not overlap.
+Each integration owns its topics and payloads, so supporting another consumer means adding an `IPlayerIntegration` (see `Jellyfin.Plugin.Mqtt/Integrations/`) without touching the core. Its name, description, repository and settings are listed on the configuration page automatically. Several integrations can be enabled at once, as long as their topics do not overlap.
 
 Shared by every integration:
 
