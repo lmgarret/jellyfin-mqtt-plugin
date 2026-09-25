@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +17,26 @@ public interface IPlayerIntegration
     /// Gets the id used to enable the integration in the configuration.
     /// </summary>
     string Id { get; }
+
+    /// <summary>
+    /// Gets the name shown on the configuration page.
+    /// </summary>
+    string Name { get; }
+
+    /// <summary>
+    /// Gets the description shown on the configuration page, e.g. the consumer's requirements.
+    /// </summary>
+    string Description { get; }
+
+    /// <summary>
+    /// Gets the repository of the consumer.
+    /// </summary>
+    Uri RepositoryUrl { get; }
+
+    /// <summary>
+    /// Gets the configuration settings used by the integration, shown while it is enabled.
+    /// </summary>
+    IReadOnlyList<IntegrationSetting> Settings { get; }
 
     /// <summary>
     /// Gets the topic filters to subscribe to while connected, e.g. command topics.

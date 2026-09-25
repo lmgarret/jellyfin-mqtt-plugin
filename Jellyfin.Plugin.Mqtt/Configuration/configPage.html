@@ -63,22 +63,24 @@
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Integrations</h2>
                         <div class="fieldDescription">Each integration publishes the players in the MQTT format of one consumer.</div>
-                        <div class="checkboxContainer checkboxContainer-withDescription">
-                            <label class="emby-checkbox-label">
-                                <input type="checkbox" is="emby-checkbox" class="mqttIntegration" data-id="mqtt_universal_media_player" />
-                                <span>Home Assistant: MQTT Universal Media Player</span>
-                            </label>
-                            <div class="fieldDescription checkboxFieldDescription">Requires the mqtt_universal_media_player custom integration, 0.3.0 or later.</div>
-                        </div>
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="DiscoveryPrefix">Home Assistant discovery prefix</label>
-                            <input id="DiscoveryPrefix" type="text" is="emby-input" />
-                        </div>
+                        <div id="IntegrationList"></div>
                     </div>
 
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Exposed players</h2>
-                        <div class="fieldDescription">Only devices of the selected users are published. Uncheck a device to hide it.</div>
+                        <div class="fieldDescription">Only devices of the selected users are published. A device is listed under the last user who signed in on it. Uncheck a device to hide it.</div>
+                        <div class="mqttToolbar">
+                            <div class="inputContainer">
+                                <label class="inputLabel inputLabelUnfocused" for="DeviceFilter">Filter devices</label>
+                                <input id="DeviceFilter" type="search" is="emby-input" autocomplete="off" />
+                            </div>
+                            <div class="checkboxContainer">
+                                <label class="emby-checkbox-label">
+                                    <input id="HideStale" type="checkbox" is="emby-checkbox" checked />
+                                    <span>Hide devices not seen for 30 days</span>
+                                </label>
+                            </div>
+                        </div>
                         <div id="UserList"></div>
                     </div>
 
@@ -90,15 +92,51 @@
                 </form>
             </div>
         </div>
+        <style>
+            #MqttConfigPage .mqttIntegration { margin-bottom: 1em; }
+            #MqttConfigPage .mqttIntegrationSettings { margin-left: 2em; }
+            #MqttConfigPage .mqttToolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0 2em; }
+            #MqttConfigPage .mqttToolbar .inputContainer { flex: 1 1 16em; }
+            #MqttConfigPage .mqttUser { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 0.3em; margin-bottom: 0.6em; }
+            #MqttConfigPage .mqttUserHeader { display: flex; align-items: center; gap: 1em; padding: 0.2em 0.6em; }
+            #MqttConfigPage .mqttUserHeader .checkboxContainer { margin: 0; flex: 1 1 auto; }
+            #MqttConfigPage .mqttExpand { background: none; border: 0; color: inherit; cursor: pointer; padding: 0.3em; }
+            #MqttConfigPage .mqttExpand:disabled { opacity: 0.3; cursor: default; }
+            #MqttConfigPage .mqttExpand .material-icons { transition: transform 0.2s; }
+            #MqttConfigPage .mqttUser.expanded .mqttExpand .material-icons { transform: rotate(180deg); }
+            #MqttConfigPage .mqttUserDevices { overflow-x: auto; border-top: 1px solid rgba(128, 128, 128, 0.3); }
+            #MqttConfigPage .mqttDevices { width: 100%; border-collapse: collapse; }
+            #MqttConfigPage .mqttDevices th, #MqttConfigPage .mqttDevices td { padding: 0.4em 0.6em; text-align: left; vertical-align: middle; }
+            #MqttConfigPage .mqttDevices th { font-weight: 500; white-space: nowrap; border-bottom: 1px solid rgba(128, 128, 128, 0.3); }
+            #MqttConfigPage .mqttDevices th[data-sort] { cursor: pointer; user-select: none; }
+            #MqttConfigPage .mqttDevices th .material-icons { font-size: 1.1em; vertical-align: middle; }
+            #MqttConfigPage .mqttDevices tbody tr:hover { background: rgba(128, 128, 128, 0.1); }
+            #MqttConfigPage .mqttDevices tbody tr.excluded { opacity: 0.55; }
+            #MqttConfigPage .mqttDevices .emby-checkbox-label { margin: 0; }
+            #MqttConfigPage .mqttCheckCol { width: 2.5em; }
+            #MqttConfigPage .mqttDeviceCell { display: flex; align-items: center; gap: 0.8em; }
+            #MqttConfigPage .mqttIcon { width: 2em; height: 2em; object-fit: contain; flex: none; }
+            #MqttConfigPage .mqttSub { font-size: 0.85em; opacity: 0.7; }
+            #MqttConfigPage .mqttDot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.4em; background: rgba(128, 128, 128, 0.6); }
+            #MqttConfigPage .mqttDot.online { background: #4caf50; }
+            #MqttConfigPage .mqttEmpty { padding: 0.8em; }
+        </style>
         <script type="text/javascript">
             (function () {
                 var pluginId = '1b020142-51af-4034-b9e6-650165ae0be0';
                 var page = document.querySelector('#MqttConfigPage');
-                var textFields = ['BrokerHost', 'Username', 'Password', 'ClientId', 'BaseTopic', 'DiscoveryPrefix', 'ServerUrl'];
+                var textFields = ['BrokerHost', 'Username', 'Password', 'ClientId', 'BaseTopic', 'ServerUrl'];
                 var checkFields = ['UseTls', 'AllowUntrustedCertificates'];
+                var staleMs = 30 * 24 * 3600 * 1000;
+                var deviceIconsUrl = 'assets/img/devices/';
+                var integrations = [];
                 var users = [];
                 var devices = [];
+                var sessions = {};
+                var allowed = [];
                 var excluded = [];
+                var expanded = [];
+                var sort = { key: 'seen', dir: -1 };
 
                 function escapeHtml(value) {
                     var div = document.createElement('div');
@@ -111,66 +149,293 @@
                         + escapeHtml(id) + '"' + (checked ? ' checked' : '') + ' /><span>' + label + '</span></label>';
                 }
 
-                function renderUsers(allowed) {
-                    var html = users.map(function (user) {
-                        var isAllowed = allowed.indexOf(user.Id) !== -1;
-                        var userDevices = devices.filter(function (d) { return d.LastUserId === user.Id; });
-                        var deviceHtml = userDevices.map(function (d) {
-                            var name = escapeHtml(d.CustomName || d.Name) + ' <span class="fieldDescription">' + escapeHtml(d.AppName) + '</span>';
-                            return '<div class="checkboxContainer" style="margin-left:2em">' + checkbox('mqttDevice', d.Id, name, excluded.indexOf(d.Id) === -1) + '</div>';
-                        }).join('');
-                        if (isAllowed && !userDevices.length) {
-                            deviceHtml = '<div class="fieldDescription" style="margin-left:2em">No devices yet.</div>';
-                        }
-
-                        return '<div class="checkboxContainer">' + checkbox('mqttUser', user.Id, escapeHtml(user.Name), isAllowed) + '</div>'
-                            + (isAllowed ? deviceHtml : '');
-                    }).join('');
-                    page.querySelector('#UserList').innerHTML = html;
+                function toggle(list, id, on) {
+                    var i = list.indexOf(id);
+                    if (on && i === -1) {
+                        list.push(id);
+                    } else if (!on && i !== -1) {
+                        list.splice(i, 1);
+                    }
                 }
 
-                function selectedUsers() {
-                    return Array.prototype.filter.call(page.querySelectorAll('.mqttUser'), function (c) { return c.checked; })
-                        .map(function (c) { return c.getAttribute('data-id'); });
+                // Same mapping as the Jellyfin dashboard, whose device icons are served by the web client.
+                function webIcon(browser) {
+                    switch (browser) {
+                        case 'Opera': case 'Opera TV': case 'Opera Android': return 'opera.svg';
+                        case 'Chrome': case 'Chrome Android': return 'chrome.svg';
+                        case 'Firefox': case 'Firefox Android': return 'firefox.svg';
+                        case 'Safari': case 'Safari iPad': case 'Safari iPhone': return 'safari.svg';
+                        case 'Edge Chromium': case 'Edge Chromium Android': case 'Edge Chromium iPad': case 'Edge Chromium iPhone': return 'edgechromium.svg';
+                        case 'Edge': return 'edge.svg';
+                        case 'Internet Explorer': return 'msie.svg';
+                        default: return 'html5.svg';
+                    }
                 }
 
-                function collectExcluded() {
-                    var shown = page.querySelectorAll('.mqttDevice');
-                    var shownIds = Array.prototype.map.call(shown, function (c) { return c.getAttribute('data-id'); });
-                    // Keep exclusions of devices not currently displayed.
-                    var result = excluded.filter(function (id) { return shownIds.indexOf(id) === -1; });
-                    Array.prototype.forEach.call(shown, function (c) {
-                        if (!c.checked && result.indexOf(c.getAttribute('data-id')) === -1) {
-                            result.push(c.getAttribute('data-id'));
+                function deviceIcon(d) {
+                    switch (d.AppName) {
+                        case 'Samsung Smart TV': return deviceIconsUrl + 'samsungtv.svg';
+                        case 'Xbox One': return deviceIconsUrl + 'xbox.svg';
+                        case 'Sony PS4': return deviceIconsUrl + 'playstation.svg';
+                        case 'Kodi': case 'Kodi JellyCon': return deviceIconsUrl + 'kodi.svg';
+                        case 'Jellyfin Android': case 'AndroidTV': case 'Android TV': case 'Jellyfin Android TV':
+                        case 'Jellyfin for Android': case 'Jellyfin for Android TV':
+                            return deviceIconsUrl + 'android.svg';
+                        case 'Jellyfin Mobile (iOS)': case 'Jellyfin Mobile (iPadOS)': case 'Jellyfin iOS': case 'Jellyfin iPadOS':
+                        case 'Jellyfin tvOS': case 'Swiftfin iPadOS': case 'Swiftfin iOS': case 'Swiftfin tvOS':
+                        case 'Infuse': case 'Infuse-Direct': case 'Infuse-Library':
+                            return deviceIconsUrl + 'apple.svg';
+                        case 'Home Assistant': return deviceIconsUrl + 'home-assistant.svg';
+                        case 'Jellyfin for WebOS': case 'LG Smart TV': return deviceIconsUrl + 'webos.svg';
+                        case 'Jellyfin Roku': return deviceIconsUrl + 'roku.svg';
+                        case 'Finamp': return deviceIconsUrl + 'finamp.svg';
+                        case 'Jellyfin Web': return deviceIconsUrl + webIcon(d.Name);
+                        default: {
+                            var url = d.IconUrl || (d.Capabilities && d.Capabilities.IconUrl);
+                            return /^https?:\/\//i.test(url || '') ? url : deviceIconsUrl + 'other.svg';
                         }
+                    }
+                }
+
+                function lastSeen(d) {
+                    var time = d.DateLastActivity ? Date.parse(d.DateLastActivity) : NaN;
+                    return isNaN(time) ? 0 : time;
+                }
+
+                function relativeTime(time) {
+                    if (!time) {
+                        return 'Never';
+                    }
+
+                    var seconds = Math.round((time - Date.now()) / 1000);
+                    var units = [['year', 31536000], ['month', 2592000], ['week', 604800], ['day', 86400], ['hour', 3600], ['minute', 60]];
+                    var format = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+                    for (var i = 0; i < units.length; i++) {
+                        if (Math.abs(seconds) >= units[i][1]) {
+                            return format.format(Math.round(seconds / units[i][1]), units[i][0]);
+                        }
+                    }
+
+                    return 'Just now';
+                }
+
+                // 3 playing, 2 paused, 1 connected, 0 offline.
+                function statusRank(d) {
+                    var session = sessions[d.Id];
+                    if (!session) {
+                        return 0;
+                    }
+
+                    if (!session.NowPlayingItem) {
+                        return 1;
+                    }
+
+                    return session.PlayState && session.PlayState.IsPaused ? 2 : 3;
+                }
+
+                function statusHtml(d) {
+                    var rank = statusRank(d);
+                    if (!rank) {
+                        return '<span class="mqttDot"></span>Offline';
+                    }
+
+                    var html = '<span class="mqttDot online"></span>' + (rank === 3 ? 'Playing' : rank === 2 ? 'Paused' : 'Connected');
+                    if (rank > 1) {
+                        html += '<div class="mqttSub">' + escapeHtml(sessions[d.Id].NowPlayingItem.Name) + '</div>';
+                    }
+
+                    return html;
+                }
+
+                function sortValue(d) {
+                    switch (sort.key) {
+                        case 'name': return (d.CustomName || d.Name || '').toLowerCase();
+                        case 'app': return ((d.AppName || '') + ' ' + (d.AppVersion || '')).toLowerCase();
+                        case 'status': return statusRank(d);
+                        default: return lastSeen(d);
+                    }
+                }
+
+                function compare(a, b) {
+                    var x = sortValue(a);
+                    var y = sortValue(b);
+                    var result = x < y ? -1 : x > y ? 1 : 0;
+                    return result ? result * sort.dir : lastSeen(b) - lastSeen(a);
+                }
+
+                function isVisible(d) {
+                    if (page.querySelector('#HideStale').checked && Date.now() - lastSeen(d) > staleMs && !sessions[d.Id]) {
+                        return false;
+                    }
+
+                    var filter = page.querySelector('#DeviceFilter').value.trim().toLowerCase();
+                    return !filter || [d.CustomName, d.Name, d.AppName, d.AppVersion].some(function (v) {
+                        return v && String(v).toLowerCase().indexOf(filter) !== -1;
                     });
-                    return result;
                 }
 
-                page.querySelector('#UserList').addEventListener('change', function (e) {
-                    if (e.target.classList.contains('mqttUser')) {
-                        excluded = collectExcluded();
-                        renderUsers(selectedUsers());
+                function userDevices(userId) {
+                    return devices.filter(function (d) { return d.LastUserId === userId; });
+                }
+
+                function headerCell(key, label) {
+                    var active = sort.key === key;
+                    var ariaSort = active ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none';
+                    var icon = active ? '<span class="material-icons ' + (sort.dir > 0 ? 'arrow_upward' : 'arrow_downward') + '" aria-hidden="true"></span>' : '';
+                    return '<th data-sort="' + key + '" aria-sort="' + ariaSort + '">' + label + ' ' + icon + '</th>';
+                }
+
+                function deviceRow(d) {
+                    var isExposed = excluded.indexOf(d.Id) === -1;
+                    var name = d.CustomName || d.Name;
+                    var seen = lastSeen(d);
+                    return '<tr class="' + (isExposed ? '' : 'excluded') + '">'
+                        + '<td class="mqttCheckCol">' + checkbox('mqttDevice', d.Id, '', isExposed) + '</td>'
+                        + '<td><div class="mqttDeviceCell"><img class="mqttIcon" alt="" loading="lazy" src="' + escapeHtml(deviceIcon(d)) + '" />'
+                        + '<div><div>' + escapeHtml(name) + '</div>'
+                        + (d.CustomName && d.CustomName !== d.Name ? '<div class="mqttSub">' + escapeHtml(d.Name) + '</div>' : '')
+                        + '</div></div></td>'
+                        + '<td>' + escapeHtml(d.AppName) + '<div class="mqttSub">' + escapeHtml(d.AppVersion) + '</div></td>'
+                        + '<td title="' + (seen ? escapeHtml(new Date(seen).toLocaleString()) : '') + '">' + escapeHtml(relativeTime(seen)) + '</td>'
+                        + '<td>' + statusHtml(d) + '</td>'
+                        + '</tr>';
+                }
+
+                function devicesTable(user, list) {
+                    var shown = list.filter(isVisible).sort(compare);
+                    var hidden = list.length - shown.length;
+                    var hiddenHtml = hidden ? '<div class="fieldDescription mqttEmpty">' + hidden + ' device' + (hidden === 1 ? '' : 's') + ' hidden by the filters.</div>' : '';
+                    if (!shown.length) {
+                        return list.length ? hiddenHtml : '<div class="fieldDescription mqttEmpty">No devices yet.</div>';
+                    }
+
+                    var allExposed = shown.every(function (d) { return excluded.indexOf(d.Id) === -1; });
+                    return '<table class="mqttDevices"><thead><tr>'
+                        + '<th class="mqttCheckCol" title="Select all shown devices">' + checkbox('mqttAll', user.Id, '', allExposed) + '</th>'
+                        + headerCell('name', 'Device') + headerCell('app', 'Client') + headerCell('seen', 'Last seen') + headerCell('status', 'Status')
+                        + '</tr></thead><tbody>' + shown.map(deviceRow).join('') + '</tbody></table>' + hiddenHtml;
+                }
+
+                function countText(list, isAllowed) {
+                    if (!isAllowed) {
+                        return list.length + ' device' + (list.length === 1 ? '' : 's') + ', not exposed';
+                    }
+
+                    var exposed = list.filter(function (d) { return excluded.indexOf(d.Id) === -1; }).length;
+                    return exposed + ' of ' + list.length + ' device' + (list.length === 1 ? '' : 's') + ' exposed';
+                }
+
+                function renderUsers() {
+                    page.querySelector('#UserList').innerHTML = users.map(function (user) {
+                        var list = userDevices(user.Id);
+                        var isAllowed = allowed.indexOf(user.Id) !== -1;
+                        var isExpanded = isAllowed && list.length && expanded.indexOf(user.Id) !== -1;
+                        return '<div class="mqttUser' + (isExpanded ? ' expanded' : '') + '" data-user="' + escapeHtml(user.Id) + '">'
+                            + '<div class="mqttUserHeader">'
+                            + '<div class="checkboxContainer">' + checkbox('mqttUserToggle', user.Id, escapeHtml(user.Name), isAllowed) + '</div>'
+                            + '<span class="fieldDescription">' + countText(list, isAllowed) + '</span>'
+                            + '<button type="button" class="mqttExpand" title="Show devices" aria-expanded="' + !!isExpanded + '"'
+                            + (isAllowed && list.length ? '' : ' disabled') + '><span class="material-icons expand_more" aria-hidden="true"></span></button>'
+                            + '</div>'
+                            + (isExpanded ? '<div class="mqttUserDevices">' + devicesTable(user, list) + '</div>' : '')
+                            + '</div>';
+                    }).join('');
+                }
+
+                function renderIntegrations(enabled, config) {
+                    page.querySelector('#IntegrationList').innerHTML = integrations.map(function (integration) {
+                        var isEnabled = enabled.indexOf(integration.Id) !== -1;
+                        var settings = (integration.Settings || []).map(function (s) {
+                            return '<div class="inputContainer">'
+                                + '<label class="inputLabel inputLabelUnfocused" for="Setting_' + escapeHtml(s.Key) + '">' + escapeHtml(s.Label) + '</label>'
+                                + '<input id="Setting_' + escapeHtml(s.Key) + '" class="mqttSetting" data-key="' + escapeHtml(s.Key) + '" type="text" is="emby-input" value="'
+                                + escapeHtml(config[s.Key]) + '" />'
+                                + (s.Description ? '<div class="fieldDescription">' + escapeHtml(s.Description) + '</div>' : '')
+                                + '</div>';
+                        }).join('');
+                        return '<div class="mqttIntegration">'
+                            + '<div class="checkboxContainer checkboxContainer-withDescription">'
+                            + checkbox('mqttIntegrationToggle', integration.Id, escapeHtml(integration.Name), isEnabled)
+                            + '<div class="fieldDescription checkboxFieldDescription">' + escapeHtml(integration.Description)
+                            + ' <a class="button-link" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(integration.RepositoryUrl) + '">'
+                            + 'Repository</a></div>'
+                            + '</div>'
+                            + '<div class="mqttIntegrationSettings"' + (isEnabled ? '' : ' hidden') + '>' + settings + '</div>'
+                            + '</div>';
+                    }).join('');
+                }
+
+                page.querySelector('#IntegrationList').addEventListener('change', function (e) {
+                    if (e.target.classList.contains('mqttIntegrationToggle')) {
+                        e.target.closest('.mqttIntegration').querySelector('.mqttIntegrationSettings').hidden = !e.target.checked;
                     }
                 });
+
+                page.querySelector('#UserList').addEventListener('change', function (e) {
+                    var id = e.target.getAttribute('data-id');
+                    if (e.target.classList.contains('mqttUserToggle')) {
+                        toggle(allowed, id, e.target.checked);
+                        toggle(expanded, id, e.target.checked);
+                    } else if (e.target.classList.contains('mqttDevice')) {
+                        toggle(excluded, id, !e.target.checked);
+                    } else if (e.target.classList.contains('mqttAll')) {
+                        userDevices(id).filter(isVisible).forEach(function (d) { toggle(excluded, d.Id, !e.target.checked); });
+                    } else {
+                        return;
+                    }
+
+                    renderUsers();
+                });
+
+                page.querySelector('#UserList').addEventListener('click', function (e) {
+                    var expand = e.target.closest('.mqttExpand');
+                    var header = e.target.closest('th[data-sort]');
+                    if (expand) {
+                        var userId = expand.closest('.mqttUser').getAttribute('data-user');
+                        toggle(expanded, userId, expanded.indexOf(userId) === -1);
+                    } else if (header) {
+                        var key = header.getAttribute('data-sort');
+                        sort = { key: key, dir: sort.key === key ? -sort.dir : (key === 'name' || key === 'app' ? 1 : -1) };
+                    } else {
+                        return;
+                    }
+
+                    renderUsers();
+                });
+
+                // Icons missing from older web clients fall back to the generic one.
+                page.querySelector('#UserList').addEventListener('error', function (e) {
+                    if (e.target.classList && e.target.classList.contains('mqttIcon') && e.target.src.indexOf('other.svg') === -1) {
+                        e.target.src = deviceIconsUrl + 'other.svg';
+                    }
+                }, true);
+
+                page.querySelector('#DeviceFilter').addEventListener('input', renderUsers);
+                page.querySelector('#HideStale').addEventListener('change', renderUsers);
 
                 page.addEventListener('pageshow', function () {
                     Dashboard.showLoadingMsg();
                     Promise.all([
                         ApiClient.getPluginConfiguration(pluginId),
                         ApiClient.getUsers(),
-                        ApiClient.getJSON(ApiClient.getUrl('Devices'))
+                        ApiClient.getJSON(ApiClient.getUrl('Devices')),
+                        ApiClient.getJSON(ApiClient.getUrl('Sessions', { ActiveWithinSeconds: 960 })),
+                        ApiClient.getJSON(ApiClient.getUrl('Mqtt/Integrations'))
                     ]).then(function (results) {
                         var config = results[0];
                         users = results[1];
                         devices = results[2].Items || [];
-                        excluded = config.ExcludedDeviceIds || [];
+                        sessions = {};
+                        results[3].forEach(function (s) { sessions[s.DeviceId] = s; });
+                        integrations = results[4];
+                        allowed = (config.AllowedUserIds || []).slice();
+                        excluded = (config.ExcludedDeviceIds || []).slice();
+                        expanded = allowed.length === 1 ? allowed.slice() : [];
                         textFields.forEach(function (f) { page.querySelector('#' + f).value = config[f] || ''; });
                         checkFields.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
                         page.querySelector('#BrokerPort').value = config.BrokerPort;
-                        var enabled = config.EnabledIntegrations || [];
-                        page.querySelectorAll('.mqttIntegration').forEach(function (c) { c.checked = enabled.indexOf(c.getAttribute('data-id')) !== -1; });
-                        renderUsers(config.AllowedUserIds || []);
+                        renderIntegrations(config.EnabledIntegrations || [], config);
+                        renderUsers();
                     }).finally(function () {
                         Dashboard.hideLoadingMsg();
                     });
@@ -183,10 +448,11 @@
                         textFields.forEach(function (f) { var v = page.querySelector('#' + f).value; config[f] = f === 'Password' ? v : v.trim(); });
                         checkFields.forEach(function (f) { config[f] = page.querySelector('#' + f).checked; });
                         config.BrokerPort = parseInt(page.querySelector('#BrokerPort').value, 10) || 1883;
-                        config.EnabledIntegrations = Array.prototype.filter.call(page.querySelectorAll('.mqttIntegration'), function (c) { return c.checked; })
+                        config.EnabledIntegrations = Array.prototype.filter.call(page.querySelectorAll('.mqttIntegrationToggle'), function (c) { return c.checked; })
                             .map(function (c) { return c.getAttribute('data-id'); });
-                        config.AllowedUserIds = selectedUsers();
-                        config.ExcludedDeviceIds = excluded = collectExcluded();
+                        page.querySelectorAll('.mqttSetting').forEach(function (input) { config[input.getAttribute('data-key')] = input.value.trim(); });
+                        config.AllowedUserIds = allowed.slice();
+                        config.ExcludedDeviceIds = excluded.slice();
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     }).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

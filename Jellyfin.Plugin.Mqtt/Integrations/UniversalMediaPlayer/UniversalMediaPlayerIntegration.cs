@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.Mqtt.Configuration;
 using Jellyfin.Plugin.Mqtt.Mqtt;
 using Jellyfin.Plugin.Mqtt.Players;
 
@@ -48,6 +49,21 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
 
     /// <inheritdoc />
     public string Id => IntegrationId;
+
+    /// <inheritdoc />
+    public string Name => "Home Assistant: MQTT Universal Media Player";
+
+    /// <inheritdoc />
+    public string Description => "Requires the mqtt_universal_media_player custom integration, 0.3.0 or later.";
+
+    /// <inheritdoc />
+    public Uri RepositoryUrl { get; } = new("https://github.com/grzegorz914/homeassistant-mqtt-media-player");
+
+    /// <inheritdoc />
+    public IReadOnlyList<IntegrationSetting> Settings { get; } =
+    [
+        new(nameof(PluginConfiguration.DiscoveryPrefix), "Home Assistant discovery prefix", null),
+    ];
 
     /// <inheritdoc />
     public IEnumerable<string> GetSubscriptions(IntegrationContext context)
