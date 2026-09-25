@@ -1,4 +1,9 @@
+<p align="center"><img src="assets/logo.png" alt="Jellyfin MQTT Plugin" width="480"></p>
+
 # Jellyfin MQTT Plugin
+
+[![Jellyfin 12](https://img.shields.io/badge/Jellyfin-12-AA5CC3?logo=jellyfin&logoColor=white)](https://jellyfin.org)
+[![MQTT](https://img.shields.io/badge/MQTT-660066?logo=mqtt&logoColor=white)](https://mqtt.org)
 
 Publishes Jellyfin clients as media players over MQTT, so home automation tools such as Home Assistant can follow and control them without polling.
 
