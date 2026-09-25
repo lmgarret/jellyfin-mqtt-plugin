@@ -27,7 +27,7 @@ In the plugin settings:
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
 - **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
 - **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. Only `mqtt_universal_media_player` exists for now, enabled by default.
-- **Exposed players**: no user is exposed by default. Select users to publish their devices, and uncheck devices to hide them. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
+- **Exposed players**: no user is exposed by default. Select users, then check the devices to publish; new devices stay hidden until checked. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
 
 ## Architecture
 
