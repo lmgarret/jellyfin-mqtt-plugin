@@ -62,6 +62,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -74,33 +75,9 @@ jobs:
           # Code quality is covered by the Roslyn analyzers in the build.
           queries: security-extended
       - run: dotnet build Jellyfin.Plugin.Mqtt.slnx --configuration Release
-      # Code scanning (the Security tab) is unavailable on private repos
-      # without GitHub Code Security, so keep the SARIF locally and gate on it.
       - uses: github/codeql-action/analyze@v4
         with:
-          upload: never
-          output: sarif-results
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: codeql-sarif
-          path: sarif-results
-      - name: Fail on findings
-        run: |
-          # Error/warning findings fail the job; notes are only listed.
-          jq -r '
-            .runs[] | (.tool.driver.rules // []) as $rules | .results[]? |
-            (.level // (if .ruleIndex != null then $rules[.ruleIndex].defaultConfiguration.level else null end) // "warning") as $level |
-            "\($level)\t\(.ruleId)\t\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)\t\(.message.text)"
-          ' sarif-results/*.sarif | tee findings.tsv
-          BLOCKING=$(grep -cE '^(error|warning)' findings.tsv || true)
-          echo "::notice::CodeQL: $(wc -l < findings.tsv) findings, ${BLOCKING} blocking"
-          if [ "$BLOCKING" -gt 0 ]; then
-            grep -E '^(error|warning)' findings.tsv | while IFS=$'\t' read -r LEVEL RULE LOC MSG; do
-              echo "::error title=${RULE}::${LOC} ${MSG}"
-            done
-            exit 1
-          fi
+          category: /language:csharp
 
   package:
     name: package
