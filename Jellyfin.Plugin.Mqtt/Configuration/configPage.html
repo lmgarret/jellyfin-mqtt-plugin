@@ -68,7 +68,7 @@
 
                     <div class="verticalSection">
                         <h2 class="sectionTitle">Exposed players</h2>
-                        <div class="fieldDescription">Only devices of the selected users are published. A device is listed under the last user who signed in on it. Uncheck a device to hide it.</div>
+                        <div class="fieldDescription">Only devices of the selected users are published. A device is listed under the last user who signed in on it. Check a device to expose it.</div>
                         <div class="mqttToolbar">
                             <div class="inputContainer">
                                 <label class="inputLabel inputLabelUnfocused" for="DeviceFilter">Filter devices</label>
@@ -111,7 +111,7 @@
             #MqttConfigPage .mqttDevices th[data-sort] { cursor: pointer; user-select: none; }
             #MqttConfigPage .mqttDevices th .material-icons { font-size: 1.1em; vertical-align: middle; }
             #MqttConfigPage .mqttDevices tbody tr:hover { background: rgba(128, 128, 128, 0.1); }
-            #MqttConfigPage .mqttDevices tbody tr.excluded { opacity: 0.55; }
+            #MqttConfigPage .mqttDevices tbody tr.unexposed { opacity: 0.55; }
             #MqttConfigPage .mqttDevices .emby-checkbox-label { margin: 0; }
             #MqttConfigPage .mqttCheckCol { width: 2.5em; }
             #MqttConfigPage .mqttDeviceCell { display: flex; align-items: center; gap: 0.8em; }
@@ -134,7 +134,7 @@
                 var devices = [];
                 var sessions = {};
                 var allowed = [];
-                var excluded = [];
+                var selected = [];
                 var expanded = [];
                 var sort = { key: 'seen', dir: -1 };
 
@@ -286,10 +286,10 @@
                 }
 
                 function deviceRow(d) {
-                    var isExposed = excluded.indexOf(d.Id) === -1;
+                    var isExposed = selected.indexOf(d.Id) !== -1;
                     var name = d.CustomName || d.Name;
                     var seen = lastSeen(d);
-                    return '<tr class="' + (isExposed ? '' : 'excluded') + '">'
+                    return '<tr class="' + (isExposed ? '' : 'unexposed') + '">'
                         + '<td class="mqttCheckCol">' + checkbox('mqttDevice', d.Id, '', isExposed) + '</td>'
                         + '<td><div class="mqttDeviceCell"><img class="mqttIcon" alt="" loading="lazy" src="' + escapeHtml(deviceIcon(d)) + '" />'
                         + '<div><div>' + escapeHtml(name) + '</div>'
@@ -309,7 +309,7 @@
                         return list.length ? hiddenHtml : '<div class="fieldDescription mqttEmpty">No devices yet.</div>';
                     }
 
-                    var allExposed = shown.every(function (d) { return excluded.indexOf(d.Id) === -1; });
+                    var allExposed = shown.every(function (d) { return selected.indexOf(d.Id) !== -1; });
                     return '<table class="mqttDevices"><thead><tr>'
                         + '<th class="mqttCheckCol" title="Select all shown devices">' + checkbox('mqttAll', user.Id, '', allExposed) + '</th>'
                         + headerCell('name', 'Device') + headerCell('app', 'Client') + headerCell('seen', 'Last seen') + headerCell('status', 'Status')
@@ -321,7 +321,7 @@
                         return list.length + ' device' + (list.length === 1 ? '' : 's') + ', not exposed';
                     }
 
-                    var exposed = list.filter(function (d) { return excluded.indexOf(d.Id) === -1; }).length;
+                    var exposed = list.filter(function (d) { return selected.indexOf(d.Id) !== -1; }).length;
                     return exposed + ' of ' + list.length + ' device' + (list.length === 1 ? '' : 's') + ' exposed';
                 }
 
@@ -377,9 +377,9 @@
                         toggle(allowed, id, e.target.checked);
                         toggle(expanded, id, e.target.checked);
                     } else if (e.target.classList.contains('mqttDevice')) {
-                        toggle(excluded, id, !e.target.checked);
+                        toggle(selected, id, e.target.checked);
                     } else if (e.target.classList.contains('mqttAll')) {
-                        userDevices(id).filter(isVisible).forEach(function (d) { toggle(excluded, d.Id, !e.target.checked); });
+                        userDevices(id).filter(isVisible).forEach(function (d) { toggle(selected, d.Id, e.target.checked); });
                     } else {
                         return;
                     }
@@ -429,7 +429,7 @@
                         results[3].forEach(function (s) { sessions[s.DeviceId] = s; });
                         integrations = results[4];
                         allowed = (config.AllowedUserIds || []).slice();
-                        excluded = (config.ExcludedDeviceIds || []).slice();
+                        selected = (config.ExposedDeviceIds || []).slice();
                         expanded = allowed.length === 1 ? allowed.slice() : [];
                         textFields.forEach(function (f) { page.querySelector('#' + f).value = config[f] || ''; });
                         checkFields.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
@@ -452,7 +452,7 @@
                             .map(function (c) { return c.getAttribute('data-id'); });
                         page.querySelectorAll('.mqttSetting').forEach(function (input) { config[input.getAttribute('data-key')] = input.value.trim(); });
                         config.AllowedUserIds = allowed.slice();
-                        config.ExcludedDeviceIds = excluded.slice();
+                        config.ExposedDeviceIds = selected.slice();
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     }).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

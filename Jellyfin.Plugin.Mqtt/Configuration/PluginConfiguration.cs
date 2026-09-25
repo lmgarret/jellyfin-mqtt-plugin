@@ -74,8 +74,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public string[] AllowedUserIds { get; set; } = Array.Empty<string>();
 
     /// <summary>
-    /// Gets or sets the ids of devices that are never exposed, even for allowed users.
+    /// Gets or sets the ids of the exposed devices, among those of the allowed users. No device is exposed while empty.
     /// </summary>
     [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Required by the XML serializer.")]
-    public string[] ExcludedDeviceIds { get; set; } = Array.Empty<string>();
+    public string[] ExposedDeviceIds { get; set; } = Array.Empty<string>();
 }

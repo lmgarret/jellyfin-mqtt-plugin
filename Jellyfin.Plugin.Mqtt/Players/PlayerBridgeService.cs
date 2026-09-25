@@ -43,7 +43,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     private IntegrationContext? _context;
     private IReadOnlyList<IPlayerIntegration> _enabled = [];
     private HashSet<Guid> _allowedUsers = [];
-    private HashSet<string> _excludedDevices = [];
+    private HashSet<string> _exposedDevices = [];
 
     private Timer? _timer;
 
@@ -215,7 +215,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
                 .Select(id => Guid.TryParse(id, out var guid) ? guid : Guid.Empty)
                 .Where(id => id != Guid.Empty)
                 .ToHashSet();
-            _excludedDevices = config.ExcludedDeviceIds.ToHashSet(StringComparer.Ordinal);
+            _exposedDevices = config.ExposedDeviceIds.ToHashSet(StringComparer.Ordinal);
 
             if (reconnect)
             {
@@ -366,7 +366,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
             }
             else if (IsExposed(deviceId, _sessionManager.Sessions.Where(s => s.DeviceId == deviceId).Select(s => s.UserId)))
             {
-                // A new device of an allowed user.
+                // An exposed device not seen yet.
                 await SyncLockedAsync().ConfigureAwait(false);
             }
         }
@@ -460,7 +460,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
         {
             foreach (var info in _deviceManager.GetDeviceInfos(new DeviceQuery { UserId = userId }).Items)
             {
-                if (string.IsNullOrEmpty(info.Id) || _excludedDevices.Contains(info.Id) || devices.ContainsKey(info.Id))
+                if (string.IsNullOrEmpty(info.Id) || !_exposedDevices.Contains(info.Id) || devices.ContainsKey(info.Id))
                 {
                     continue;
                 }
@@ -490,7 +490,7 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
     }
 
     private bool IsExposed(string deviceId, IEnumerable<Guid> userIds) =>
-        !_excludedDevices.Contains(deviceId) && userIds.Any(_allowedUsers.Contains);
+        _exposedDevices.Contains(deviceId) && userIds.Any(_allowedUsers.Contains);
 
     private SessionInfo? FindSession(string deviceId) =>
         _sessionManager.Sessions
