@@ -52,7 +52,9 @@ jobs:
         with:
           model: anthropic/claude-sonnet-5
           model_analysis: anthropic/claude-haiku-4-5
-          current_version: ${{ steps.prev_tag.outputs.tag }}
+          # First release has no tag to bump from: v0.0.0 makes the action
+          # walk the full history instead of failing.
+          current_version: ${{ steps.prev_tag.outputs.tag || 'v0.0.0' }}
           changelog_config: |
             default:
               languages: [en]
