@@ -26,7 +26,7 @@ In the plugin settings:
 
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
 - **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
-- **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. Only `mqtt_universal_media_player` exists for now, enabled by default.
+- **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. `mqtt_universal_media_player` is enabled by default; `mqtt_media_player` is also available.
 - **Exposed players**: no user is exposed by default. Select users, then check the devices to publish; new devices stay hidden until checked. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
 
 ## Architecture
@@ -90,6 +90,26 @@ Commands, several keys may be combined:
 | `mute` | `true` / `false` |
 
 Example: `mosquitto_pub -t jellyfin/players/<id>/command -m '{"pause": true}'`
+
+## Integration: `mqtt_media_player`
+
+Install the [MQTT Media Player](https://github.com/bkbilly/mqtt_media_player) custom integration (HACS); players then show up automatically. It only listens under the `homeassistant` discovery prefix, so the prefix setting does not apply. Stop and seek are not supported by it.
+
+Do not install both Home Assistant integrations: `mqtt_media_player` also picks up the announcements meant for `mqtt_universal_media_player`.
+
+| Topic | Direction | Payload |
+| --- | --- | --- |
+| `<base>/mqtt_media_player/<id>/<field>` | out, retained | Plain value, empty when not applicable, see below |
+| `<base>/mqtt_media_player/<id>/set/<command>` | in | See below |
+| `homeassistant/media_player/jellyfin/jellyfin_<server>_<id>/config` | out, retained | Discovery |
+
+Fields: `state` (`off`, `idle`, `playing`, `paused`), `title`, `artist` (the series for episodes), `album`, `duration` and `position` (seconds), `volume` (`0`–`1`), `mute` (`mute` / `unmute`), `mediatype`, and `albumart` (base64 image). Unchanged fields are not published again, except the position.
+
+Commands: `play`, `pause`, `playpause`, `next`, `previous` (any payload), `volume` (`0`–`1`), `mute` (`mute` / `unmute`).
+
+Example: `mosquitto_pub -t jellyfin/mqtt_media_player/<id>/set/volume -m 0.4`
+
+Players no longer exposed are withdrawn, but the integration keeps their entity: delete it in Home Assistant.
 
 ## Building
 
