@@ -26,7 +26,7 @@ In the plugin settings:
 
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
 - **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
-- **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. `mqtt_universal_media_player` is enabled by default; `mqtt_media_player` is also available.
+- **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. `mqtt_universal_media_player` is enabled by default; `mqtt_media_player` and `mqtt-mediaplayer` are also available.
 - **Exposed players**: no user is exposed by default. Select users, then check the devices to publish; new devices stay hidden until checked. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
 
 ## Architecture
@@ -110,6 +110,58 @@ Commands: `play`, `pause`, `playpause`, `next`, `previous` (any payload), `volum
 Example: `mosquitto_pub -t jellyfin/mqtt_media_player/<id>/set/volume -m 0.4`
 
 Players no longer exposed are withdrawn, but the integration keeps their entity: delete it in Home Assistant.
+
+## Integration: `mqtt-mediaplayer`
+
+For the [hass-mqtt-mediaplayer](https://github.com/TroyFernandes/hass-mqtt-mediaplayer) custom integration (HACS). It has no discovery: its media players are declared in YAML, from templates over Home Assistant entities. So each player is discovered as a native MQTT sensor, named after the device, whose state is the playback status (`off`, `idle`, `playing`, `paused`) and whose attributes hold the metadata. Its discovery prefix is configurable (default `homeassistant`).
+
+| Topic | Direction | Payload |
+| --- | --- | --- |
+| `<base>/mqtt_mediaplayer/<id>/state` | out, retained | JSON state: the keys of `mqtt_universal_media_player` without position and duration, plus `command_topic` and `albumart_topic` |
+| `<base>/mqtt_mediaplayer/<id>/albumart` | out, retained | Base64 artwork, empty when nothing plays |
+| `<base>/mqtt_mediaplayer/<id>/command` | in | JSON command, as for `mqtt_universal_media_player` |
+| `<prefix>/sensor/jellyfin_<server>_<id>/config` | out, retained | Discovery |
+
+`media_artist` falls back to the series for episodes. Declare each player in `configuration.yaml`, replacing `sensor.living_room_tv` with its sensor, and the `album_art` topic with the sensor's `albumart_topic` attribute:
+
+```yaml
+media_player:
+  - platform: mqtt-mediaplayer
+    name: "Living room TV"
+    topic:
+      song_title: "{{ state_attr('sensor.living_room_tv', 'media_title') }}"
+      song_artist: "{{ state_attr('sensor.living_room_tv', 'media_artist') }}"
+      song_album: "{{ state_attr('sensor.living_room_tv', 'media_album_name') }}"
+      song_volume: "{{ state_attr('sensor.living_room_tv', 'volume') }}"
+      player_status: "{{ states('sensor.living_room_tv') }}"
+      album_art: "jellyfin/mqtt_mediaplayer/<id>/albumart"
+      volume:
+        service: mqtt.publish
+        data:
+          topic: "{{ state_attr('sensor.living_room_tv', 'command_topic') }}"
+          # Volume set sends 0-1, volume up/down send 0-100.
+          payload: '{"volume": {{ (volume * 100) | round | int if volume is float else volume }}}'
+    play:
+      service: mqtt.publish
+      data:
+        topic: "{{ state_attr('sensor.living_room_tv', 'command_topic') }}"
+        payload: '{"play": true}'
+    pause:
+      service: mqtt.publish
+      data:
+        topic: "{{ state_attr('sensor.living_room_tv', 'command_topic') }}"
+        payload: '{"pause": true}'
+    next:
+      service: mqtt.publish
+      data:
+        topic: "{{ state_attr('sensor.living_room_tv', 'command_topic') }}"
+        payload: '{"next": true}'
+    previous:
+      service: mqtt.publish
+      data:
+        topic: "{{ state_attr('sensor.living_room_tv', 'command_topic') }}"
+        payload: '{"previous": true}'
+```
 
 ## Building
 
