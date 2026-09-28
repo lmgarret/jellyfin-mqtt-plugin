@@ -68,6 +68,11 @@ public class PluginConfiguration : BasePluginConfiguration
     public string ServerUrl { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the artwork published while an episode plays.
+    /// </summary>
+    public EpisodeArtwork EpisodeArtwork { get; set; } = EpisodeArtwork.Episode;
+
+    /// <summary>
     /// Gets or sets the ids of the users whose devices are exposed. No user is exposed while empty.
     /// </summary>
     [SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "Required by the XML serializer.")]

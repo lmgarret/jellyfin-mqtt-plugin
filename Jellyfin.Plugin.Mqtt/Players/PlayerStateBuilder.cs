@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.Mqtt.Configuration;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
@@ -19,9 +20,18 @@ public static class PlayerStateBuilder
     /// <param name="device">The exposed device.</param>
     /// <param name="session">The session currently open on the device, if any.</param>
     /// <param name="serverUrl">The server URL used for artwork links, empty to omit the link.</param>
+    /// <param name="episodeArtwork">The artwork published while an episode plays.</param>
+    /// <param name="primaryImageTag">Gets the primary image tag of a library item, null when it has none.</param>
     /// <returns>The player state.</returns>
-    public static PlayerState Build(ExposedDevice device, SessionInfo? session, string serverUrl)
+    public static PlayerState Build(
+        ExposedDevice device,
+        SessionInfo? session,
+        string serverUrl,
+        EpisodeArtwork episodeArtwork,
+        Func<Guid, string?> primaryImageTag)
     {
+        ArgumentNullException.ThrowIfNull(primaryImageTag);
+
         var state = new PlayerState
         {
             DeviceName = device.Name,
@@ -48,7 +58,7 @@ public static class PlayerStateBuilder
             return state;
         }
 
-        var image = Image(item);
+        var image = Image(item, episodeArtwork, primaryImageTag);
         return state with
         {
             Status = playState?.IsPaused == true ? PlayerStatus.Paused : PlayerStatus.Playing,
@@ -87,20 +97,29 @@ public static class PlayerStateBuilder
         _ => item.MediaType == MediaType.Audio ? "music" : "video",
     };
 
-    private static ImageReference? Image(BaseItemDto item)
+    private static ImageReference? Image(BaseItemDto item, EpisodeArtwork episodeArtwork, Func<Guid, string?> primaryImageTag)
     {
-        (Guid? id, string? tag) = item.ImageTags?.TryGetValue(ImageType.Primary, out var primaryTag) == true
-            ? (item.Id, primaryTag)
-            : item.Type switch
-            {
-                BaseItemKind.Episode when item.SeriesPrimaryImageTag is not null => (item.SeriesId, item.SeriesPrimaryImageTag),
-                _ when item.AlbumPrimaryImageTag is not null => (item.AlbumId, item.AlbumPrimaryImageTag),
-                _ when item.ParentPrimaryImageTag is not null => (item.ParentPrimaryImageItemId, item.ParentPrimaryImageTag),
-                _ => ((Guid?)null, (string?)null),
-            };
+        var own = item.ImageTags?.TryGetValue(ImageType.Primary, out var primaryTag) == true ? Reference(item.Id, primaryTag) : null;
+        var parent = Reference(item.ParentPrimaryImageItemId, item.ParentPrimaryImageTag);
+        if (item.Type != BaseItemKind.Episode)
+        {
+            return own ?? Reference(item.AlbumId, item.AlbumPrimaryImageTag) ?? parent;
+        }
 
-        return id is null || tag is null ? null : new ImageReference(id.Value, tag);
+        // The DTO carries no season image tag, so it is looked up only when needed.
+        ImageReference? Season() => item.SeasonId is Guid seasonId ? Reference(seasonId, primaryImageTag(seasonId)) : null;
+        var series = Reference(item.SeriesId, item.SeriesPrimaryImageTag);
+        var preferred = episodeArtwork switch
+        {
+            EpisodeArtwork.Season => Season() ?? series ?? own,
+            EpisodeArtwork.Series => series ?? Season() ?? own,
+            _ => own ?? Season() ?? series,
+        };
+
+        return preferred ?? parent;
     }
+
+    private static ImageReference? Reference(Guid? id, string? tag) => id is null || tag is null ? null : new ImageReference(id.Value, tag);
 
     private static string? ImageUrl(ImageReference? image, string serverUrl)
     {
