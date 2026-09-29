@@ -36,6 +36,18 @@ public class ArtworkLoader
     }
 
     /// <summary>
+    /// Gets the primary image tag of a library item.
+    /// </summary>
+    /// <param name="itemId">The item id.</param>
+    /// <returns>The image tag, or null when the item has no primary image.</returns>
+    public string? GetPrimaryImageTag(Guid itemId)
+    {
+        var item = _libraryManager.GetItemById(itemId);
+        var info = item?.GetImageInfo(ImageType.Primary, 0);
+        return item is null || info is null ? null : _imageProcessor.GetImageCacheTag(item, info);
+    }
+
+    /// <summary>
     /// Loads an image, resized to fit 600x600.
     /// </summary>
     /// <param name="image">The image.</param>

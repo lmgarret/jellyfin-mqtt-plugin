@@ -425,7 +425,8 @@ public sealed class PlayerBridgeService : IHostedService, IDisposable
 
     private async Task PublishStateLockedAsync(ExposedDevice device)
     {
-        var state = PlayerStateBuilder.Build(device, FindSession(device.DeviceId), _context!.Configuration.ServerUrl);
+        var config = _context!.Configuration;
+        var state = PlayerStateBuilder.Build(device, FindSession(device.DeviceId), config.ServerUrl, config.EpisodeArtwork, _artwork.GetPrimaryImageTag);
         var now = DateTime.UtcNow;
 
         _published.TryGetValue(device.DeviceId, out var previous);

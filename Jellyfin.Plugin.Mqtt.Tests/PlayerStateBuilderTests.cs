@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.Mqtt.Configuration;
 using Jellyfin.Plugin.Mqtt.Players;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
@@ -19,7 +20,7 @@ public class PlayerStateBuilderTests
     [Fact]
     public void NoSession_IsOff()
     {
-        var state = PlayerStateBuilder.Build(_device, null, "http://jf");
+        var state = Build(null, "http://jf");
 
         Assert.Equal(PlayerStatus.Off, state.Status);
         Assert.Equal("Living room", state.DeviceName);
@@ -32,7 +33,7 @@ public class PlayerStateBuilderTests
         var session = CreateSession();
         session.PlayState = new PlayerStateInfo { VolumeLevel = 40, IsMuted = true };
 
-        var state = PlayerStateBuilder.Build(_device, session, string.Empty);
+        var state = Build(session, string.Empty);
 
         Assert.Equal(PlayerStatus.Idle, state.Status);
         Assert.Equal(40, state.Volume);
@@ -60,7 +61,7 @@ public class PlayerStateBuilderTests
             ImageTags = new Dictionary<ImageType, string>(),
         };
 
-        var state = PlayerStateBuilder.Build(_device, session, "http://jf/");
+        var state = Build(session, "http://jf/");
 
         Assert.Equal(PlayerStatus.Paused, state.Status);
         Assert.Equal("Pilot", state.MediaTitle);
@@ -71,8 +72,47 @@ public class PlayerStateBuilderTests
         Assert.Equal($"http://jf/Items/{seriesId:N}/Images/Primary?tag=tag&maxWidth=600", state.MediaImageUrl);
         Assert.Equal(new ImageReference(seriesId, "tag"), state.MediaImage);
         Assert.Equal(TimeSpan.FromSeconds(90), state.MediaPosition);
-        Assert.Null(PlayerStateBuilder.Build(_device, session, string.Empty).MediaImageUrl);
+        Assert.Null(Build(session, string.Empty).MediaImageUrl);
     }
+
+    [Theory]
+    [InlineData(EpisodeArtwork.Episode, "episode")]
+    [InlineData(EpisodeArtwork.Season, "season")]
+    [InlineData(EpisodeArtwork.Series, "series")]
+    public void Episode_UsesConfiguredArtwork(EpisodeArtwork episodeArtwork, string expectedTag)
+    {
+        var session = CreateSession();
+        session.NowPlayingItem = CreateEpisode(Guid.NewGuid());
+
+        var state = PlayerStateBuilder.Build(_device, session, string.Empty, episodeArtwork, _ => "season");
+
+        Assert.Equal(expectedTag, state.MediaImage?.Tag);
+    }
+
+    [Fact]
+    public void Episode_FallsBackWhenConfiguredArtworkIsMissing()
+    {
+        var session = CreateSession();
+        session.NowPlayingItem = CreateEpisode(Guid.NewGuid());
+
+        var state = PlayerStateBuilder.Build(_device, session, string.Empty, EpisodeArtwork.Season, _ => null);
+
+        Assert.Equal("series", state.MediaImage?.Tag);
+    }
+
+    private static PlayerState Build(SessionInfo? session, string serverUrl) =>
+        PlayerStateBuilder.Build(_device, session, serverUrl, EpisodeArtwork.Episode, _ => null);
+
+    private static BaseItemDto CreateEpisode(Guid id) => new()
+    {
+        Id = id,
+        Name = "Pilot",
+        Type = BaseItemKind.Episode,
+        SeasonId = Guid.NewGuid(),
+        SeriesId = Guid.NewGuid(),
+        SeriesPrimaryImageTag = "series",
+        ImageTags = new Dictionary<ImageType, string> { [ImageType.Primary] = "episode" },
+    };
 
     private static SessionInfo CreateSession() =>
         new(Substitute.For<ISessionManager>(), NullLogger.Instance)

@@ -5,7 +5,7 @@
     <title>MQTT</title>
 </head>
 <body>
-    <div id="MqttConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div id="MqttConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
                 <form id="MqttConfigForm">
@@ -57,6 +57,15 @@
                             <label class="inputLabel inputLabelUnfocused" for="ServerUrl">Server URL for artwork links (optional)</label>
                             <input id="ServerUrl" type="url" is="emby-input" placeholder="http://jellyfin.local:8096" />
                             <div class="fieldDescription">Artwork is always published as image bytes. When set, player states also carry an artwork link built from this URL.</div>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="EpisodeArtwork">Episode artwork</label>
+                            <select id="EpisodeArtwork" is="emby-select">
+                                <option value="Episode">Episode</option>
+                                <option value="Season">Season</option>
+                                <option value="Series">Series</option>
+                            </select>
+                            <div class="fieldDescription">Image published while an episode plays. Falls back to the other images when it has none.</div>
                         </div>
                     </div>
 
@@ -434,6 +443,7 @@
                         textFields.forEach(function (f) { page.querySelector('#' + f).value = config[f] || ''; });
                         checkFields.forEach(function (f) { page.querySelector('#' + f).checked = !!config[f]; });
                         page.querySelector('#BrokerPort').value = config.BrokerPort;
+                        page.querySelector('#EpisodeArtwork').value = config.EpisodeArtwork || 'Episode';
                         renderIntegrations(config.EnabledIntegrations || [], config);
                         renderUsers();
                     }).finally(function () {
@@ -448,6 +458,7 @@
                         textFields.forEach(function (f) { var v = page.querySelector('#' + f).value; config[f] = f === 'Password' ? v : v.trim(); });
                         checkFields.forEach(function (f) { config[f] = page.querySelector('#' + f).checked; });
                         config.BrokerPort = parseInt(page.querySelector('#BrokerPort').value, 10) || 1883;
+                        config.EpisodeArtwork = page.querySelector('#EpisodeArtwork').value;
                         config.EnabledIntegrations = Array.prototype.filter.call(page.querySelectorAll('.mqttIntegrationToggle'), function (c) { return c.checked; })
                             .map(function (c) { return c.getAttribute('data-id'); });
                         page.querySelectorAll('.mqttSetting').forEach(function (input) { config[input.getAttribute('data-key')] = input.value.trim(); });

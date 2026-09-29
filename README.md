@@ -25,7 +25,7 @@ In Jellyfin, open **Dashboard → Plugins → Repositories**, add one of these r
 In the plugin settings:
 
 - **Broker**: host, port, TLS and credentials. The bridge stays idle until a host is set.
-- **Topics**: base topic (default `jellyfin`), and optionally a Jellyfin URL to also publish artwork as a link.
+- **Topics**: base topic (default `jellyfin`), optionally a Jellyfin URL to also publish artwork as a link, and the artwork published for episodes (episode, season or series image).
 - **Integrations**: the MQTT formats players are published in, see below, each with a link to its consumer's repository and its own settings. `mqtt_universal_media_player` is enabled by default; `mqtt_media_player` and `mqtt-mediaplayer` are also available.
 - **Exposed players**: no user is exposed by default. Select users, then check the devices to publish; new devices stay hidden until checked. Each user's devices are listed in a sortable table with their client, when they were last seen and what they are playing; the header checkbox selects or clears every shown device.
 
