@@ -38,6 +38,21 @@ public sealed record PlayerState
     public bool? Muted { get; init; }
 
     /// <summary>
+    /// Gets whether the volume can be controlled, null without a session.
+    /// </summary>
+    public bool? VolumeSupported { get; init; }
+
+    /// <summary>
+    /// Gets whether the queue is shuffled, null when the player cannot shuffle.
+    /// </summary>
+    public bool? Shuffle { get; init; }
+
+    /// <summary>
+    /// Gets the repeat mode, null when the player cannot repeat.
+    /// </summary>
+    public PlayerRepeatMode? Repeat { get; init; }
+
+    /// <summary>
     /// Gets the id of the playing item.
     /// </summary>
     public string? MediaId { get; init; }

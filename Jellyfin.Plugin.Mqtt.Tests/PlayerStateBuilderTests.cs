@@ -100,6 +100,38 @@ public class PlayerStateBuilderTests
         Assert.Equal("series", state.MediaImage?.Tag);
     }
 
+    [Fact]
+    public void SupportedCommands_EnableVolumeShuffleAndRepeat()
+    {
+        var session = CreateSession();
+        session.Capabilities = new ClientCapabilities
+        {
+            SupportedCommands = [GeneralCommandType.SetVolume, GeneralCommandType.SetShuffleQueue, GeneralCommandType.SetRepeatMode],
+        };
+        session.PlayState = new PlayerStateInfo { PlaybackOrder = PlaybackOrder.Shuffle, RepeatMode = RepeatMode.RepeatOne };
+
+        var state = Build(session, string.Empty);
+
+        Assert.True(state.VolumeSupported);
+        Assert.True(state.Shuffle);
+        Assert.Equal(PlayerRepeatMode.One, state.Repeat);
+    }
+
+    [Fact]
+    public void UnsupportedCommands_HideVolumeShuffleAndRepeat()
+    {
+        var session = CreateSession();
+        session.Capabilities = new ClientCapabilities { SupportedCommands = [] };
+        session.PlayState = new PlayerStateInfo { PlaybackOrder = PlaybackOrder.Shuffle, RepeatMode = RepeatMode.RepeatAll };
+
+        var state = Build(session, string.Empty);
+
+        Assert.False(state.VolumeSupported);
+        Assert.Null(state.Shuffle);
+        Assert.Null(state.Repeat);
+        Assert.Null(Build(null, string.Empty).VolumeSupported);
+    }
+
     private static PlayerState Build(SessionInfo? session, string serverUrl) =>
         PlayerStateBuilder.Build(_device, session, serverUrl, EpisodeArtwork.Episode, _ => null);
 
