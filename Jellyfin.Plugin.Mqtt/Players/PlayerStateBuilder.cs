@@ -6,6 +6,7 @@ using Jellyfin.Plugin.Mqtt.Configuration;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Session;
 
 namespace Jellyfin.Plugin.Mqtt.Players;
 
@@ -44,12 +45,16 @@ public static class PlayerStateBuilder
         }
 
         var playState = session.PlayState;
+        var supported = session.SupportedCommands ?? [];
         state = state with
         {
             Status = PlayerStatus.Idle,
             UserName = session.UserName,
             Volume = playState?.VolumeLevel,
             Muted = playState?.IsMuted,
+            VolumeSupported = supported.Contains(GeneralCommandType.SetVolume),
+            Shuffle = supported.Contains(GeneralCommandType.SetShuffleQueue) ? playState?.PlaybackOrder == PlaybackOrder.Shuffle : null,
+            Repeat = supported.Contains(GeneralCommandType.SetRepeatMode) ? Repeat(playState?.RepeatMode) : null,
         };
 
         var item = session.NowPlayingItem;
@@ -76,6 +81,13 @@ public static class PlayerStateBuilder
             MediaDuration = item.RunTimeTicks is long runtime ? TimeSpan.FromTicks(runtime) : null,
         };
     }
+
+    private static PlayerRepeatMode Repeat(RepeatMode? mode) => mode switch
+    {
+        RepeatMode.RepeatAll => PlayerRepeatMode.All,
+        RepeatMode.RepeatOne => PlayerRepeatMode.One,
+        _ => PlayerRepeatMode.Off,
+    };
 
     private static string? Artist(BaseItemDto item)
     {

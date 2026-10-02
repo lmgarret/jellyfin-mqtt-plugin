@@ -56,4 +56,28 @@ public class PlayerCommandExecutorTests
             Arg.Is<GeneralCommand>(c => c.Name == GeneralCommandType.Unmute),
             Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ShuffleRepeatAndMessage_AreGeneralCommands()
+    {
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.SetShuffle, 1), CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.SetRepeat, (int)PlayerRepeatMode.All), CancellationToken.None);
+        await PlayerCommandExecutor.ExecuteAsync(_sessionManager, "session", new PlayerCommand(PlayerCommandKind.DisplayMessage, Text: "Doorbell"), CancellationToken.None);
+
+        await _sessionManager.Received(1).SendGeneralCommand(
+            null,
+            "session",
+            Arg.Is<GeneralCommand>(c => c.Name == GeneralCommandType.SetShuffleQueue && c.Arguments["ShuffleMode"] == "Shuffle"),
+            Arg.Any<CancellationToken>());
+        await _sessionManager.Received(1).SendGeneralCommand(
+            null,
+            "session",
+            Arg.Is<GeneralCommand>(c => c.Name == GeneralCommandType.SetRepeatMode && c.Arguments["RepeatMode"] == "RepeatAll"),
+            Arg.Any<CancellationToken>());
+        await _sessionManager.Received(1).SendGeneralCommand(
+            null,
+            "session",
+            Arg.Is<GeneralCommand>(c => c.Name == GeneralCommandType.DisplayMessage && c.Arguments["Text"] == "Doorbell" && c.Arguments.ContainsKey("TimeoutMs")),
+            Arg.Any<CancellationToken>());
+    }
 }

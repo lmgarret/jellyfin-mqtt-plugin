@@ -13,6 +13,8 @@ namespace Jellyfin.Plugin.Mqtt.Players;
 /// </summary>
 public static class PlayerCommandExecutor
 {
+    private const string MessageTimeoutMs = "10000";
+
     /// <summary>
     /// Sends a command to a session.
     /// </summary>
@@ -50,6 +52,30 @@ public static class PlayerCommandExecutor
                     ["Volume"] = ((int)Math.Clamp(Math.Round(command.Value), 0, 100)).ToString(CultureInfo.InvariantCulture),
                 }),
             PlayerCommandKind.SetMute => General(command.Value != 0 ? GeneralCommandType.Mute : GeneralCommandType.Unmute, null),
+            PlayerCommandKind.SetShuffle => General(
+                GeneralCommandType.SetShuffleQueue,
+                new Dictionary<string, string> { ["ShuffleMode"] = command.Value != 0 ? "Shuffle" : "Sorted" }),
+            PlayerCommandKind.SetRepeat => General(
+                GeneralCommandType.SetRepeatMode,
+                new Dictionary<string, string>
+                {
+                    ["RepeatMode"] = (PlayerRepeatMode)(int)command.Value switch
+                    {
+                        PlayerRepeatMode.All => nameof(RepeatMode.RepeatAll),
+                        PlayerRepeatMode.One => nameof(RepeatMode.RepeatOne),
+                        _ => nameof(RepeatMode.RepeatNone),
+                    },
+                }),
+            PlayerCommandKind.DisplayMessage => General(
+                GeneralCommandType.DisplayMessage,
+                new Dictionary<string, string>
+                {
+                    ["Header"] = "Notification",
+                    ["Text"] = command.Text ?? string.Empty,
+
+                    // With a timeout, clients show a toast instead of a dialog that must be dismissed.
+                    ["TimeoutMs"] = MessageTimeoutMs,
+                }),
             _ => throw new ArgumentOutOfRangeException(nameof(command), command.Kind, "Unknown command"),
         };
 

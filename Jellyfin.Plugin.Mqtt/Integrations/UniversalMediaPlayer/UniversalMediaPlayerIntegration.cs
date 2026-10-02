@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.Mqtt.Integrations.UniversalMediaPlayer;
 /// <summary>
 /// Exposes players to Home Assistant through the
 /// <see href="https://github.com/grzegorz914/homeassistant-mqtt-media-player">mqtt_universal_media_player</see>
-/// custom integration (0.3.0 or later).
+/// custom integration (0.3.0 or later; notify needs 0.4.0, volume control 0.6.0, shuffle and repeat 0.7.0).
 /// </summary>
 /// <remarks>
 /// Topics, under the base topic:
@@ -54,7 +54,7 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
     public string Name => "Home Assistant: MQTT Universal Media Player";
 
     /// <inheritdoc />
-    public string Description => "Requires the mqtt_universal_media_player custom integration, 0.3.0 or later.";
+    public string Description => "Requires the mqtt_universal_media_player custom integration, 0.3.0 or later (0.7.0 for every feature).";
 
     /// <inheritdoc />
     public Uri RepositoryUrl { get; } = new("https://github.com/grzegorz914/homeassistant-mqtt-media-player");
@@ -114,6 +114,9 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
                 ["previous"] = Trigger("previous"),
                 ["volume_set"] = new { key = "volume", min = 0, max = 100, step = 1 },
                 ["mute"] = new { key = "mute" },
+                ["shuffle"] = new { key = "shuffle" },
+                ["repeat"] = new { key = "repeat" },
+                ["notify"] = new { key = "notify" },
             },
         };
 
@@ -204,6 +207,16 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
             ["state"] = state.Status.ToString().ToLowerInvariant(),
             ["volume"] = state.Volume,
             ["muted"] = state.Muted,
+            ["volume_control"] = state.VolumeSupported switch
+            {
+                true => "full",
+                false => "none",
+                null => null,
+            },
+
+            // Null hides the control.
+            ["shuffle"] = state.Shuffle,
+            ["repeat"] = state.Repeat?.ToString().ToLowerInvariant(),
             ["media_id"] = state.MediaId,
             ["media_title"] = state.MediaTitle,
             ["media_artist"] = state.MediaArtist,
@@ -267,15 +280,32 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
         {
             "seek" => new PlayerCommand(PlayerCommandKind.Seek, ReadNumber(name, value)),
             "volume" => new PlayerCommand(PlayerCommandKind.SetVolume, ReadNumber(name, value)),
-            "mute" => value.ValueKind switch
-            {
-                JsonValueKind.True => new PlayerCommand(PlayerCommandKind.SetMute, 1),
-                JsonValueKind.False => new PlayerCommand(PlayerCommandKind.SetMute, 0),
-                _ => throw new FormatException($"Command '{name}' expects a boolean"),
-            },
+            "mute" => new PlayerCommand(PlayerCommandKind.SetMute, ReadBoolean(name, value) ? 1 : 0),
+            "shuffle" => new PlayerCommand(PlayerCommandKind.SetShuffle, ReadBoolean(name, value) ? 1 : 0),
+            "repeat" => new PlayerCommand(PlayerCommandKind.SetRepeat, (int)ReadRepeat(name, value)),
+            "notify" => value.ValueKind == JsonValueKind.String
+                ? new PlayerCommand(PlayerCommandKind.DisplayMessage, Text: value.GetString())
+                : throw new FormatException($"Command '{name}' expects a string"),
             _ => throw new FormatException($"Unknown command '{name}'"),
         };
     }
+
+    private static bool ReadBoolean(string name, JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        _ => throw new FormatException($"Command '{name}' expects a boolean"),
+    };
+
+    private static PlayerRepeatMode ReadRepeat(string name, JsonElement value) => value.ValueKind == JsonValueKind.String
+        ? value.GetString() switch
+        {
+            "off" => PlayerRepeatMode.Off,
+            "all" => PlayerRepeatMode.All,
+            "one" => PlayerRepeatMode.One,
+            _ => throw new FormatException($"Command '{name}' expects off, all or one"),
+        }
+        : throw new FormatException($"Command '{name}' expects off, all or one");
 
     private static double ReadNumber(string name, JsonElement value)
     {

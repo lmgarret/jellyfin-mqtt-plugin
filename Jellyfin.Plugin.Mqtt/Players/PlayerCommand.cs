@@ -30,12 +30,22 @@ public enum PlayerCommandKind
     SetVolume,
 
     /// <summary>Mutes when <see cref="PlayerCommand.Value"/> is non-zero, unmutes otherwise.</summary>
-    SetMute
+    SetMute,
+
+    /// <summary>Shuffles the queue when <see cref="PlayerCommand.Value"/> is non-zero, restores its order otherwise.</summary>
+    SetShuffle,
+
+    /// <summary>Sets the repeat mode to <see cref="PlayerCommand.Value"/>, a <see cref="PlayerRepeatMode"/>.</summary>
+    SetRepeat,
+
+    /// <summary>Shows <see cref="PlayerCommand.Text"/> on the screen.</summary>
+    DisplayMessage
 }
 
 /// <summary>
 /// A command for a player, independent of any wire format.
 /// </summary>
 /// <param name="Kind">The command kind.</param>
-/// <param name="Value">The argument of <see cref="PlayerCommandKind.Seek"/>, <see cref="PlayerCommandKind.SetVolume"/> and <see cref="PlayerCommandKind.SetMute"/>.</param>
-public sealed record PlayerCommand(PlayerCommandKind Kind, double Value = 0);
+/// <param name="Value">The numeric argument, e.g. of <see cref="PlayerCommandKind.Seek"/> or <see cref="PlayerCommandKind.SetVolume"/>.</param>
+/// <param name="Text">The text argument of <see cref="PlayerCommandKind.DisplayMessage"/>.</param>
+public sealed record PlayerCommand(PlayerCommandKind Kind, double Value = 0, string? Text = null);
