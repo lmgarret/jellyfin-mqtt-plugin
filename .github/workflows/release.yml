@@ -50,8 +50,8 @@ jobs:
         continue-on-error: true
         uses: lmgarret/llm-release-action@v1
         with:
-          model: anthropic/claude-sonnet-5
-          model_analysis: anthropic/claude-haiku-4-5
+          model: anthropic/claude-sonnet-5-5
+          model_analysis: anthropic/claude-haiku-5-5
           # First release has no tag to bump from: v0.0.0 makes the action
           # walk the full history instead of failing.
           current_version: ${{ steps.prev_tag.outputs.tag || 'v0.0.0' }}
