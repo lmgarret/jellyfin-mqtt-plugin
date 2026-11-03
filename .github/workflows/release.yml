@@ -41,12 +41,13 @@ jobs:
       - name: Generate AI changelog
         id: changelog
         continue-on-error: true
-        uses: lmgarret/llm-release-action@89ad4c3af8aa41030849a703ab6b081d0d384186 # v1.2.0
+        uses: lmgarret/llm-release-action@d83e2c706b87f8a94a53f3b6d11d8610ace338e3 # v2.2.0
         with:
           model: anthropic/claude-sonnet-5-5
-          model_analysis: anthropic/claude-haiku-5-5
-          # First release has no tag to bump from: v0.0.0 makes the action
-          # walk the full history instead of failing.
+          fast_model: anthropic/claude-haiku-5-5
+          # First release has no tag to bump from: v0.0.0 gives next_version
+          # a base, and an empty base_ref makes the action walk the full history.
+          base_ref: ${{ steps.prev_tag.outputs.tag }}
           current_version: ${{ steps.prev_tag.outputs.tag || 'v0.0.0' }}
           # Admins install and configure it: breaking means they must act on upgrade.
           project_type: service
@@ -71,7 +72,6 @@ jobs:
               validation:
                 max_length: 1000
           context_files: README.md
-          max_commits: 50
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
