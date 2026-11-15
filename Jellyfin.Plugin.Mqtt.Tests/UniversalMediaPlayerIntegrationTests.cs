@@ -84,14 +84,19 @@ public class UniversalMediaPlayerIntegrationTests
         Assert.Equal(JsonValueKind.Null, root.GetProperty("volume_control").ValueKind);
         Assert.Equal(JsonValueKind.Null, root.GetProperty("shuffle").ValueKind);
         Assert.Equal(JsonValueKind.Null, root.GetProperty("repeat").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("pausable").ValueKind);
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("stoppable").ValueKind);
     }
 
     [Fact]
-    public void SerializeState_MapsVolumeControlShuffleAndRepeat()
+    public void SerializeState_MapsControls()
     {
         using var payload = JsonDocument.Parse(UniversalMediaPlayerIntegration.SerializeState(
-            new PlayerState { VolumeSupported = false, Shuffle = true, Repeat = PlayerRepeatMode.All }));
+            new PlayerState { VolumeSupported = false, Shuffle = true, Repeat = PlayerRepeatMode.All, Pausable = false, Stoppable = true }));
         var root = payload.RootElement;
+
+        Assert.False(root.GetProperty("pausable").GetBoolean());
+        Assert.True(root.GetProperty("stoppable").GetBoolean());
 
         Assert.Equal("none", root.GetProperty("volume_control").GetString());
         Assert.True(root.GetProperty("shuffle").GetBoolean());

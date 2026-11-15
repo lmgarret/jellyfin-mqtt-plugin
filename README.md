@@ -43,7 +43,7 @@ Shared by every integration:
 
 ## Integration: `mqtt_universal_media_player`
 
-Home Assistant's MQTT integration has no `media_player` discovery. Install the [MQTT Universal Media Player](https://github.com/grzegorz914/homeassistant-mqtt-media-player) custom integration (HACS custom repository, v0.3.0 or later; v0.7.0 for the notify entity, shuffle, repeat and hiding the volume controls); players then show up automatically. Its discovery prefix is configurable (default `homeassistant`).
+Home Assistant's MQTT integration has no `media_player` discovery. Install the [MQTT Universal Media Player](https://github.com/grzegorz914/homeassistant-mqtt-media-player) custom integration (HACS custom repository, v0.3.0 or later; v0.7.0 for the notify entity, shuffle, repeat and hiding the volume controls; v0.9.0 for hiding play, pause and stop); players then show up automatically. Its discovery prefix is configurable (default `homeassistant`).
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
@@ -64,6 +64,8 @@ State:
   "volume_control": "full",
   "shuffle": false,
   "repeat": "off",
+  "pausable": true,
+  "stoppable": true,
   "media_id": "…",
   "media_title": "Pilot",
   "media_artist": null,
@@ -83,7 +85,7 @@ State:
 
 Every key is always present (`null` when not applicable). Position-only updates are sent at most every 10 seconds.
 
-`volume_control` is `none` when the client cannot set its volume, which hides the volume controls. `shuffle` and `repeat` are `null` when the client cannot change them, which hides those controls.
+`volume_control` is `none` when the client cannot set its volume, which hides the volume controls. `shuffle` and `repeat` are `null` when the client cannot change them, which hides those controls. `pausable` and `stoppable` are `false` when the client cannot be controlled, which hides play, pause and stop.
 
 Commands, several keys may be combined:
 
@@ -125,7 +127,7 @@ For the [hass-mqtt-mediaplayer](https://github.com/TroyFernandes/hass-mqtt-media
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
-| `<base>/mqtt_mediaplayer/<id>/state` | out, retained | JSON state: the keys of `mqtt_universal_media_player` without position, duration, `volume_control`, `shuffle` and `repeat`, plus `command_topic` and `albumart_topic` |
+| `<base>/mqtt_mediaplayer/<id>/state` | out, retained | JSON state: the keys of `mqtt_universal_media_player` without position, duration, `volume_control`, `shuffle`, `repeat`, `pausable` and `stoppable`, plus `command_topic` and `albumart_topic` |
 | `<base>/mqtt_mediaplayer/<id>/albumart` | out, retained | Base64 artwork, empty when nothing plays |
 | `<base>/mqtt_mediaplayer/<id>/command` | in | JSON command, as for `mqtt_universal_media_player` |
 | `<prefix>/sensor/jellyfin_<server>_<id>/config` | out, retained | Discovery |

@@ -132,6 +132,34 @@ public class PlayerStateBuilderTests
         Assert.Null(Build(null, string.Empty).VolumeSupported);
     }
 
+    [Fact]
+    public void MediaControl_EnablesPauseAndStop()
+    {
+        var session = CreateSession();
+        var controller = Substitute.For<ISessionController>();
+        controller.SupportsMediaControl.Returns(true);
+        session.Capabilities = new ClientCapabilities { SupportsMediaControl = true };
+        session.SessionControllers = [controller];
+
+        var state = Build(session, string.Empty);
+
+        Assert.True(state.Pausable);
+        Assert.True(state.Stoppable);
+    }
+
+    [Fact]
+    public void NoMediaControl_DisablesPauseAndStop()
+    {
+        var session = CreateSession();
+        session.Capabilities = new ClientCapabilities { SupportsMediaControl = false };
+
+        var state = Build(session, string.Empty);
+
+        Assert.False(state.Pausable);
+        Assert.False(state.Stoppable);
+        Assert.Null(Build(null, string.Empty).Pausable);
+    }
+
     private static PlayerState Build(SessionInfo? session, string serverUrl) =>
         PlayerStateBuilder.Build(_device, session, serverUrl, EpisodeArtwork.Episode, _ => null);
 

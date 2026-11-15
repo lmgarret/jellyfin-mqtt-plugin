@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.Mqtt.Integrations.UniversalMediaPlayer;
 /// <summary>
 /// Exposes players to Home Assistant through the
 /// <see href="https://github.com/grzegorz914/homeassistant-mqtt-media-player">mqtt_universal_media_player</see>
-/// custom integration (0.3.0 or later; notify needs 0.4.0, volume control 0.6.0, shuffle and repeat 0.7.0).
+/// custom integration (0.3.0 or later; notify needs 0.4.0, volume control 0.6.0, shuffle and repeat 0.7.0, pausable and stoppable 0.9.0).
 /// </summary>
 /// <remarks>
 /// Topics, under the base topic:
@@ -54,7 +54,7 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
     public string Name => "Home Assistant: MQTT Universal Media Player";
 
     /// <inheritdoc />
-    public string Description => "Requires the mqtt_universal_media_player custom integration, 0.3.0 or later (0.7.0 for every feature).";
+    public string Description => "Requires the mqtt_universal_media_player custom integration, 0.3.0 or later (0.9.0 for every feature).";
 
     /// <inheritdoc />
     public Uri RepositoryUrl { get; } = new("https://github.com/grzegorz914/homeassistant-mqtt-media-player");
@@ -217,6 +217,10 @@ public class UniversalMediaPlayerIntegration : IPlayerIntegration
             // Null hides the control.
             ["shuffle"] = state.Shuffle,
             ["repeat"] = state.Repeat?.ToString().ToLowerInvariant(),
+
+            // Only false hides the controls (0.9.0 or later); null leaves them as configured.
+            ["pausable"] = state.Pausable,
+            ["stoppable"] = state.Stoppable,
             ["media_id"] = state.MediaId,
             ["media_title"] = state.MediaTitle,
             ["media_artist"] = state.MediaArtist,

@@ -55,6 +55,8 @@ public static class PlayerStateBuilder
             VolumeSupported = supported.Contains(GeneralCommandType.SetVolume),
             Shuffle = supported.Contains(GeneralCommandType.SetShuffleQueue) ? playState?.PlaybackOrder == PlaybackOrder.Shuffle : null,
             Repeat = supported.Contains(GeneralCommandType.SetRepeatMode) ? Repeat(playState?.RepeatMode) : null,
+            Pausable = session.SupportsMediaControl,
+            Stoppable = session.SupportsMediaControl,
         };
 
         var item = session.NowPlayingItem;
