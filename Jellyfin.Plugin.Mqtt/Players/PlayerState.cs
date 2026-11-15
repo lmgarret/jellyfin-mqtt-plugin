@@ -53,6 +53,16 @@ public sealed record PlayerState
     public PlayerRepeatMode? Repeat { get; init; }
 
     /// <summary>
+    /// Gets whether playback can be paused and resumed, null without a session.
+    /// </summary>
+    public bool? Pausable { get; init; }
+
+    /// <summary>
+    /// Gets whether playback can be stopped, null without a session.
+    /// </summary>
+    public bool? Stoppable { get; init; }
+
+    /// <summary>
     /// Gets the id of the playing item.
     /// </summary>
     public string? MediaId { get; init; }
